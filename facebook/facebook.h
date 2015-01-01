@@ -22,6 +22,7 @@
 
 #include <bitlbee.h>
 
+#include "facebook-api.h"
 
 /** The main structure for the plugin. **/
 typedef struct fb_data fb_data_t;
@@ -33,6 +34,7 @@ typedef struct fb_data fb_data_t;
 struct fb_data
 {
     struct im_connection *ic; /** The #im_connection. **/
+    fb_api_t *api;            /** The #fb_api. **/
 };
 
 
