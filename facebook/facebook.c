@@ -45,11 +45,24 @@ static void fb_cb_api_auth(fb_api_t *api, gpointer data)
     fb_data_t *fata = data;
     account_t *acc  = fata->ic->acc;
 
+    set_setstr(&acc->set, "uid",   api->uid);
     set_setstr(&acc->set, "token", api->token);
     imcb_log(fata->ic, "Authentication finished");
 
     account_off(acc->bee, acc);
     account_on(acc->bee, acc);
+}
+
+/**
+ * Implemented #fb_api_funcs->connect().
+ *
+ * @param api  The #fb_api.
+ * @param data The user defined data, which is #fb_data.
+ **/
+static void fb_cb_api_connect(fb_api_t *api, gpointer data)
+{
+    fb_data_t *fata = data;
+    imcb_connected(fata->ic);
 }
 
 /**
@@ -65,8 +78,9 @@ fb_data_t *fb_data_new(account_t *acc)
     fb_data_t *fata;
 
     static const fb_api_funcs_t funcs = {
-        .error = fb_cb_api_error,
-        .auth  = fb_cb_api_auth
+        .error   = fb_cb_api_error,
+        .auth    = fb_cb_api_auth,
+        .connect = fb_cb_api_connect
     };
 
     g_return_val_if_fail(acc != NULL, NULL);
@@ -77,7 +91,17 @@ fb_data_t *fb_data_new(account_t *acc)
     fata->ic = imcb_new(acc);
     fata->ic->proto_data = fata;
 
+    fata->api->uid   = g_strdup(set_getstr(&acc->set, "uid"));
     fata->api->token = g_strdup(set_getstr(&acc->set, "token"));
+    fata->api->cid   = g_strdup(set_getstr(&acc->set, "cid"));
+    fata->api->mid   = g_strdup(set_getstr(&acc->set, "mid"));
+    fata->api->cuid  = g_strdup(set_getstr(&acc->set, "cuid"));
+
+    fb_api_rehash(fata->api);
+
+    set_setstr(&acc->set, "cid",  fata->api->cid);
+    set_setstr(&acc->set, "mid",  fata->api->mid);
+    set_setstr(&acc->set, "cuid", fata->api->cuid);
 
     return fata;
 }
@@ -96,7 +120,6 @@ void fb_data_free(fb_data_t *fata)
     g_free(fata);
 }
 
-
 /**
  * Implements #prpl->init(). This initializes an account.
  *
@@ -106,8 +129,20 @@ static void fb_init(account_t *acc)
 {
     set_t *s;
 
+    s = set_add(&acc->set, "cid", NULL, NULL, acc);
+    s->flags = SET_NULL_OK | SET_HIDDEN;
+
+    s = set_add(&acc->set, "cuid", NULL, NULL, acc);
+    s->flags = SET_NULL_OK | SET_HIDDEN;
+
+    s = set_add(&acc->set, "mid", NULL, NULL, acc);
+    s->flags = SET_NULL_OK | SET_HIDDEN;
+
     s = set_add(&acc->set, "token", NULL, NULL, acc);
     s->flags = SET_NULL_OK | SET_HIDDEN | SET_PASSWORD;
+
+    s = set_add(&acc->set, "uid", NULL, NULL, acc);
+    s->flags = SET_NULL_OK | SET_HIDDEN;
 }
 
 /**
@@ -128,7 +163,7 @@ static void fb_login(account_t *acc)
         return;
     }
 
-    imcb_connected(fata->ic);
+    fb_api_connect(fata->api);
 }
 
 /**
@@ -140,6 +175,7 @@ static void fb_logout(struct im_connection *ic)
 {
     fb_data_t *fata = ic->proto_data;
 
+    fb_api_disconnect(fata->api);
     fb_data_free(fata);
 }
 

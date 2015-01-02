@@ -44,6 +44,19 @@
 gboolean fb_util_debugging(void);
 #endif /* DEBUG_FACEBOOK */
 
+#ifdef DEBUG_FACEBOOK
+void fb_util_hexdump(const GByteArray *bytes, guint indent,
+                     const gchar *fmt, ...);
+#else /* DEBUG_FACEBOOK */
+#define fb_util_hexdump(bs, d, i)
+#endif /* DEBUG_FACEBOOK */
+
 gboolean fb_util_str_iequal(const gchar *s1, const gchar *s2);
+
+gboolean fb_util_zcompressed(const GByteArray *bytes);
+
+GByteArray *fb_util_zcompress(const GByteArray *bytes);
+
+GByteArray *fb_util_zuncompress(const GByteArray *bytes);
 
 #endif /* _FACEBOOK_UTIL_H */

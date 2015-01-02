@@ -24,6 +24,7 @@
 
 #include "facebook-http.h"
 #include "facebook-json.h"
+#include "facebook-mqtt.h"
 
 #define FB_API_HOST   "api.facebook.com"
 #define FB_API_BHOST  "b-api.facebook.com"
@@ -91,6 +92,16 @@ struct fb_api_funcs
      * @param data The user-defined data or NULL.
      **/
     void (*auth) (fb_api_t *api, gpointer data);
+
+    /**
+     * The connect function. This is called whenever the #fb_api has
+     * been successfully connected. This connects to the MQTT service.
+     * This is called as a result of #fb_api_connect().
+     *
+     * @param api  The #fb_api.
+     * @param data The user-defined data or NULL.
+     **/
+    void (*connect) (fb_api_t *api, gpointer data);
 };
 
 /**
@@ -102,9 +113,15 @@ struct fb_api
     gpointer       data;  /** The user-defined data or NULL. **/
 
     fb_http_t *http;      /** The #fb_http. **/
+    fb_mqtt_t *mqtt;      /** The #fb_mqtt. **/
     GError    *err;       /** The #GError or NULL. **/
 
+    gchar *uid;           /** The user identifier. **/
     gchar *token;         /** The session token. **/
+    gchar *cid;           /** The client identifier. **/
+    gchar *mid;           /** The MQTT identifier. **/
+    gchar *cuid;          /** The client unique identifier. **/
+    gchar *sid;           /** The sync identifier. **/
 };
 
 
@@ -114,10 +131,16 @@ GQuark fb_api_error_quark(void);
 
 fb_api_t *fb_api_new(const fb_api_funcs_t *funcs, gpointer data);
 
+void fb_api_rehash(fb_api_t *api);
+
 void fb_api_free(fb_api_t *api);
 
 void fb_api_error(fb_api_t *api, fb_api_error_t err, const gchar *fmt, ...);
 
 void fb_api_auth(fb_api_t *api, const gchar *user, const gchar *pass);
+
+void fb_api_connect(fb_api_t *api);
+
+void fb_api_disconnect(fb_api_t *api);
 
 #endif /* _FACEBOOK_API_H */

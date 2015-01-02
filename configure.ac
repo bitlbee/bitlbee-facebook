@@ -84,6 +84,7 @@ AC_ARG_WITH(
 
 PKG_CHECK_MODULES([GLIB],    [glib-2.0 >= 2.32.0])
 PKG_CHECK_MODULES([BITLBEE], [bitlbee  >= 3.2.2])
+PKG_CHECK_MODULES([ZLIB],    [zlib])
 
 AS_IF(
     [test -z "$plugindir"],

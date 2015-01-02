@@ -15,7 +15,9 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <stdarg.h>
 #include <string.h>
+#include <sha1.h>
 
 #include "facebook-api.h"
 
@@ -35,11 +37,112 @@ GQuark fb_api_error_quark(void)
 }
 
 /**
+ * Implements #fb_mqtt_funcs->error().
+ *
+ * @param mqtt The #fb_mqtt.
+ * @param err  The #GError.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_mqtt_error(fb_mqtt_t *mqtt, GError *err, gpointer data)
+{
+    fb_api_t *api = data;
+
+    if (api->err == NULL) {
+        api->err = g_error_copy(err);
+        fb_api_error(api, 0, NULL);
+    }
+}
+
+/**
+ * Implements #fb_mqtt_funcs->open().
+ *
+ * @param mqtt The #fb_mqtt.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_mqtt_open(fb_mqtt_t *mqtt, gpointer data)
+{
+    fb_api_t *api = data;
+    gchar    *msg;
+
+    static guint8 flags =
+        FB_MQTT_CONNECT_FLAG_USER |
+        FB_MQTT_CONNECT_FLAG_PASS |
+        FB_MQTT_CONNECT_FLAG_CLR;
+
+    msg = g_strdup_printf("{"
+            "\"u\":\"%s\","
+            "\"a\":\"" FB_API_AGENT "\","
+            "\"mqtt_sid\":%s,"
+            "\"d\":\"%s\","
+            "\"chat_on\":true"
+        "}", api->uid, api->mid, api->cuid);
+
+    fb_mqtt_connect(mqtt,
+        flags,      /* Flags */
+        api->cid,   /* Client identifier */
+        msg,        /* Will message */
+        api->token, /* Username */
+        NULL);
+
+    g_free(msg);
+}
+
+/**
+ * Implements #fb_mqtt_funcs->connack().
+ *
+ * @param mqtt The #fb_mqtt.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_mqtt_connack(fb_mqtt_t *mqtt, gpointer data)
+{
+    fb_api_t *api = data;
+
+    FB_API_FUNC(api, connect);
+}
+
+/**
+ * Implements #fb_mqtt_funcs->publish(().
+ *
+ * @param mqtt  The #fb_mqtt.
+ * @param topic The message topic.
+ * @param pload The message payload.
+ * @param data  The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_mqtt_publish(fb_mqtt_t *mqtt, const gchar *topic,
+                                   const GByteArray *pload, gpointer data)
+{
+    fb_api_t   *api = data;
+    GByteArray *bytes;
+    gboolean    comp;
+
+    comp = fb_util_zcompressed(pload);
+
+    if (G_LIKELY(comp)) {
+        bytes = fb_util_zuncompress(pload);
+
+        if (G_UNLIKELY(bytes == NULL)) {
+            fb_api_error(api, FB_API_ERROR, "Failed to decompress");
+            return;
+        }
+    } else {
+        bytes = (GByteArray*) pload;
+    }
+
+    fb_util_hexdump(bytes, 2, "Publishing:");
+
+    if (G_LIKELY(comp))
+        g_byte_array_free(bytes, TRUE);
+}
+
+/**
  * Creates a new #fb_api. The returned #fb_api should be freed with
  * #fb_api_free() when no longer needed.
  *
  * @param funcs The #fb_api_funcs.
  * @param data  The user-defined data or NULL.
+ * @param cid   The client identifier or NULL.
+ * @param mid   The MQTT identifier or NULL.
+ * @param cuid  The client unique identifier or NULL.
  *
  * @return The #fb_api or NULL on error.
  **/
@@ -47,14 +150,53 @@ fb_api_t *fb_api_new(const fb_api_funcs_t *funcs, gpointer data)
 {
     fb_api_t *api;
 
+    static const fb_mqtt_funcs_t muncs = {
+        .error   = fb_api_cb_mqtt_error,
+        .open    = fb_api_cb_mqtt_open,
+        .connack = fb_api_cb_mqtt_connack,
+        .publish = fb_api_cb_mqtt_publish
+    };
+
     g_return_val_if_fail(funcs != NULL, NULL);
 
     api = g_new0(fb_api_t, 1);
     memcpy(&api->funcs, funcs, sizeof *funcs);
     api->data = data;
     api->http = fb_http_new(FB_API_AGENT);
+    api->mqtt = fb_mqtt_new(&muncs, api);
 
     return api;
+}
+
+/**
+ * Rehashes the internal settings of a #fb_api.
+ *
+ * @param api The #fb_api.
+ **/
+void fb_api_rehash(fb_api_t *api)
+{
+    sha1_state_t sha;
+    guint8       rb[50];
+
+    if (api->cid == NULL) {
+        random_bytes(rb, sizeof rb);
+        api->cid = g_compute_checksum_for_data(G_CHECKSUM_MD5, rb, sizeof rb);
+    }
+
+    if (api->mid == NULL)
+        api->mid = g_strdup_printf("%" G_GUINT32_FORMAT, g_random_int());
+
+    if (api->cuid == NULL) {
+        sha1_init(&sha);
+        random_bytes(rb, sizeof rb);
+        sha1_append(&sha, rb, sizeof rb);
+        api->cuid = sha1_random_uuid(&sha);
+    }
+
+    if (strlen(api->cid) > 20) {
+        api->cid = g_realloc_n(api->cid , 21, sizeof *api->cid);
+        api->cid[20] = 0;
+    }
 }
 
 /**
@@ -70,9 +212,15 @@ void fb_api_free(fb_api_t *api)
     if (api->err != NULL)
         g_error_free(api->err);
 
+    fb_mqtt_free(api->mqtt);
     fb_http_free(api->http);
 
+    g_free(api->sid);
+    g_free(api->cuid);
+    g_free(api->mid);
+    g_free(api->cid);
     g_free(api->token);
+    g_free(api->uid);
     g_free(api);
 }
 
@@ -246,16 +394,22 @@ static void fb_api_cb_auth(fb_http_req_t *req, gpointer data)
     fb_api_t    *api = data;
     json_value  *json;
     const gchar *str;
+    gint64       in;
 
     json = fb_api_json_new(api, req->body, req->body_size);
 
     if (json == NULL)
         return;
 
-    if (!fb_json_str_chk(json, "access_token", &str)) {
-        fb_api_error(api, FB_API_ERROR_GENERAL, "Failed to obtain token");
+    if (!fb_json_int_chk(json, "uid", &in) ||
+        !fb_json_str_chk(json, "access_token", &str))
+    {
+        fb_api_error(api, FB_API_ERROR_GENERAL, "Failed to obtain user info");
         goto finish;
     }
+
+    g_free(api->uid);
+    api->uid = g_strdup_printf("%" G_GINT64_FORMAT, in);
 
     g_free(api->token);
     api->token = g_strdup(str);
@@ -291,4 +445,31 @@ void fb_api_auth(fb_api_t *api, const gchar *user, const gchar *pass)
     );
 
     fb_api_req_send(api, req);
+}
+
+/**
+ * Connects the #fb_api to the remote services. This is mainly for
+ * connecting and setting up the internal #fb_mqtt.
+ *
+ * @param The #fb_api.
+ **/
+void fb_api_connect(fb_api_t *api)
+{
+    g_return_if_fail(api != NULL);
+
+    fb_mqtt_open(api->mqtt, FB_MQTT_HOST, FB_MQTT_PORT);
+}
+
+/**
+ * Disconnects the #fb_api from the remote services. This is mainly for
+ * disconnecting the internal #fb_mqtt. This will close the internal
+ * #fb_mqtt via #fb_mqtt_close().
+ *
+ * @param The #fb_api.
+ **/
+void fb_api_disconnect(fb_api_t *api)
+{
+    g_return_if_fail(api != NULL);
+
+    fb_mqtt_disconnect(api->mqtt);
 }
