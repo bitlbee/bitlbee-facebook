@@ -61,8 +61,43 @@ static void fb_cb_api_auth(fb_api_t *api, gpointer data)
  **/
 static void fb_cb_api_connect(fb_api_t *api, gpointer data)
 {
-    fb_data_t *fata = data;
+    fb_data_t  *fata = data;
+    GSList     *l;
+    bee_user_t *bu;
+
     imcb_connected(fata->ic);
+
+    for (l = fata->ic->bee->users; l != NULL; l = l->next) {
+        bu = l->data;
+
+        /* For now, all users are online */
+        imcb_buddy_status(fata->ic, bu->handle, OPT_LOGGED_IN, NULL, NULL);
+    }
+}
+
+/**
+ * Implemented #fb_api_funcs->contacts().
+ *
+ * @param api   The #fb_api.
+ * @param users The #GSList of #fb_api_user.
+ * @param data  The user defined data, which is #fb_data.
+ **/
+static void fb_cb_api_contacts(fb_api_t *api, const GSList *users,
+                               gpointer data)
+{
+    fb_data_t     *fata = data;
+    fb_api_user_t *user;
+    const GSList  *l;
+
+    for (l = users; l != NULL; l = l->next) {
+        user = l->data;
+        imcb_add_buddy(fata->ic, user->uid, NULL);
+        imcb_buddy_nick_hint(fata->ic, user->uid, user->name);
+        imcb_rename_buddy(fata->ic, user->uid, user->name);
+    }
+
+    imcb_log(fata->ic, "Establishing connection");
+    fb_api_connect(fata->api);
 }
 
 /**
@@ -78,9 +113,10 @@ fb_data_t *fb_data_new(account_t *acc)
     fb_data_t *fata;
 
     static const fb_api_funcs_t funcs = {
-        .error   = fb_cb_api_error,
-        .auth    = fb_cb_api_auth,
-        .connect = fb_cb_api_connect
+        .error    = fb_cb_api_error,
+        .auth     = fb_cb_api_auth,
+        .connect  = fb_cb_api_connect,
+        .contacts = fb_cb_api_contacts
     };
 
     g_return_val_if_fail(acc != NULL, NULL);
@@ -163,7 +199,8 @@ static void fb_login(account_t *acc)
         return;
     }
 
-    fb_api_connect(fata->api);
+    imcb_log(fata->ic, "Fetching contacts");
+    fb_api_contacts(fata->api);
 }
 
 /**

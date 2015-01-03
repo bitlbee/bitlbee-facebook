@@ -448,6 +448,102 @@ void fb_api_auth(fb_api_t *api, const gchar *user, const gchar *pass)
 }
 
 /**
+ * Implemented #fb_http_func for #fb_api_contacts().
+ *
+ * @param req  The #fb_http_req.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_contacts(fb_http_req_t *req, gpointer data)
+{
+    fb_api_t      *api = data;
+    GSList        *users;
+    fb_api_user_t *user;
+    json_value    *json;
+    json_value    *jv;
+    json_value    *jx;
+    json_value    *jy;
+    json_value    *jz;
+    const gchar   *str;
+    const gchar   *uid;
+    const gchar   *name;
+    guint          i;
+
+    json  = fb_api_json_new(api, req->body, req->body_size);
+    users = NULL;
+
+    if (json == NULL)
+        return;
+
+    if (!fb_json_val_chk(json, "viewer",             json_object, &jv) ||
+        !fb_json_val_chk(jv,   "messenger_contacts", json_object, &jv) ||
+        !fb_json_val_chk(jv,   "nodes",              json_array,  &jv))
+    {
+        fb_api_error(api, FB_API_ERROR_GENERAL, "Failed to parse contacts");
+        goto finish;
+    }
+
+    for (i = 0; i < jv->u.array.length; i++) {
+        jx = jv->u.array.values[i];
+
+        /* Scattered values lead to a gnarly conditional... */
+        if (fb_json_val_chk(jx, "represented_profile", json_object, &jy) &&
+
+            /* Check the contact type is "user" */
+            fb_json_val_chk(jy, "__type__", json_object, &jz) &&
+            fb_json_str_chk(jz, "name", &str) &&
+            (g_ascii_strcasecmp(str, "user") == 0) &&
+
+            /* Check the contact is a friend */
+            fb_json_str_chk(jy, "friendship_status", &str) &&
+            (g_ascii_strcasecmp(str, "ARE_FRIENDS") == 0) &&
+
+            /* Obtain the contact user identifier */
+            fb_json_str_chk(jy, "id", &uid) &&
+            (g_strcmp0(uid, api->uid) != 0) &&
+
+            /* Obtain the name of the user */
+            fb_json_val_chk(jx, "structured_name", json_object, &jy) &&
+            fb_json_str_chk(jy, "text", &name))
+        {
+            user = fb_api_user_new(uid, name);
+            users = g_slist_prepend(users, user);
+        }
+    }
+
+    FB_API_FUNC(api, contacts, users);
+
+finish:
+    g_slist_free_full(users, (GDestroyNotify) fb_api_user_free);
+    json_value_free(json);
+}
+
+/**
+ * Sends a contacts request.
+ *
+ * @param api  The #fb_api.
+ **/
+void fb_api_contacts(fb_api_t *api)
+{
+    fb_http_req_t *req;
+
+    g_return_if_fail(api != NULL);
+
+    req = fb_api_req_new(api, FB_API_GHOST, FB_API_PATH_GQL,
+                         fb_api_cb_contacts,
+                         "com.facebook.contacts.service.d",
+                         "FetchContactsFullQuery",
+                         "get");
+
+    fb_http_req_params_set(req,
+        FB_HTTP_PAIR("query_id",     FB_API_QRYID_CONTACTS),
+        FB_HTTP_PAIR("query_params", "{}"),
+        NULL
+    );
+
+    fb_api_req_send(api, req);
+}
+
+/**
  * Connects the #fb_api to the remote services. This is mainly for
  * connecting and setting up the internal #fb_mqtt.
  *
@@ -472,4 +568,39 @@ void fb_api_disconnect(fb_api_t *api)
     g_return_if_fail(api != NULL);
 
     fb_mqtt_disconnect(api->mqtt);
+}
+
+/**
+ * Creates a new #fb_api_user. The returned #fb_api_user should be
+ * freed with #fb_api_user_free() when no longer needed.
+ *
+ * @param uid  The user identifier.
+ * @param name The name of the user.
+ *
+ * @return The #fb_api_user or NULL on error.
+ **/
+fb_api_user_t *fb_api_user_new(const gchar *uid, const gchar *name)
+{
+    fb_api_user_t *user;
+
+    user = g_new0(fb_api_user_t, 1);
+    user->uid  = g_strdup(uid);
+    user->name = g_strdup(name);
+
+    return user;
+}
+
+/**
+ * Frees all memory used by a #fb_api_user.
+ *
+ * @param user The #fb_api_user.
+ **/
+void fb_api_user_free(fb_api_user_t *user)
+{
+    if (G_UNLIKELY(user == NULL))
+        return;
+
+    g_free(user->name);
+    g_free(user->uid);
+    g_free(user);
 }
