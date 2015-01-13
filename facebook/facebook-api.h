@@ -34,10 +34,10 @@
 #define FB_API_SECRET "374e60f8b9bb6b8cbb30f78030438895"
 
 #define FB_API_PATH_AUTH "/method/auth.login"
+#define FB_API_PATH_FQL  "/fql"
 #define FB_API_PATH_GQL  "/graphql"
 
 #define FB_API_QRYID_CONTACTS  "10153122424521729"
-
 
 /**
  * Executes one of the #fb_api_funcs.
@@ -53,6 +53,19 @@
         }                                              \
     } G_STMT_END
 
+/**
+ * Creates a message identifier.
+ *
+ * @param m The time in miliseconds (UTC).
+ * @param i The random integer.
+ *
+ * @return The 64-bit message identifier.
+ **/
+#define FB_API_MSGID(m, i) ((guint64) ( \
+        (((guint32) i) & 0x3FFFFF) |    \
+        (((guint64) m) << 22)           \
+    ))
+
 
 /** The #GError codes of #fb_api. **/
 typedef enum fb_api_error fb_api_error_t;
@@ -62,6 +75,9 @@ typedef struct fb_api fb_api_t;
 
 /** The main structure for #fb_api callback functions. **/
 typedef struct fb_api_funcs fb_api_funcs_t;
+
+/** The structure for representing an #fb_api message. **/
+typedef struct fb_api_msg fb_api_msg_t;
 
 /** The structure for representing an #fb_api user. **/
 typedef struct fb_api_user fb_api_user_t;
@@ -120,6 +136,16 @@ struct fb_api_funcs
      * @param data  The user-defined data or NULL.
      **/
     void (*contacts) (fb_api_t *api, const GSList *users, gpointer data);
+
+    /**
+     * The message function. This is called whenever the #fb_api has
+     * retrieved a message.
+     *
+     * @param api  The #fb_api.
+     * @param msgs The #GSList of #fb_api_msg.
+     * @param data The user-defined data or NULL.
+     **/
+    void (*message) (fb_api_t *api, const GSList *msgs, gpointer data);
 };
 
 /**
@@ -136,10 +162,19 @@ struct fb_api
 
     gchar *uid;           /** The user identifier. **/
     gchar *token;         /** The session token. **/
+    gchar *stoken;        /** The sync token. **/
     gchar *cid;           /** The client identifier. **/
     gchar *mid;           /** The MQTT identifier. **/
     gchar *cuid;          /** The client unique identifier. **/
-    gchar *sid;           /** The sync identifier. **/
+};
+
+/**
+ * The structure for representing an #fb_api message.
+ **/
+struct fb_api_msg
+{
+    gchar *uid;  /** The user identifier. **/
+    gchar *text; /** The message text. **/
 };
 
 /**
@@ -171,6 +206,14 @@ void fb_api_contacts(fb_api_t *api);
 void fb_api_connect(fb_api_t *api);
 
 void fb_api_disconnect(fb_api_t *api);
+
+void fb_api_message(fb_api_t *api, const gchar *uid, const gchar *msg);
+
+void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...);
+
+fb_api_msg_t *fb_api_msg_new(const gchar *uid, const gchar *text);
+
+void fb_api_msg_free(fb_api_msg_t *msg);
 
 fb_api_user_t *fb_api_user_new(const gchar *uid, const gchar *name);
 

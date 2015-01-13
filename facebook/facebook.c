@@ -62,10 +62,12 @@ static void fb_cb_api_auth(fb_api_t *api, gpointer data)
 static void fb_cb_api_connect(fb_api_t *api, gpointer data)
 {
     fb_data_t  *fata = data;
+    account_t  *acc  = fata->ic->acc;
     GSList     *l;
     bee_user_t *bu;
 
     imcb_connected(fata->ic);
+    set_setstr(&acc->set, "stoken", api->stoken);
 
     for (l = fata->ic->bee->users; l != NULL; l = l->next) {
         bu = l->data;
@@ -101,6 +103,25 @@ static void fb_cb_api_contacts(fb_api_t *api, const GSList *users,
 }
 
 /**
+ * Implemented #fb_api_funcs->message().
+ *
+ * @param api  The #fb_api.
+ * @param msgs The #GSList of #fb_api_msg.
+ * @param data The user defined data, which is #fb_data.
+ **/
+static void fb_cb_api_message(fb_api_t *api, const GSList *msgs, gpointer data)
+{
+    fb_data_t    *fata = data;
+    fb_api_msg_t *msg;
+    const GSList *l;
+
+    for (l = msgs; l != NULL; l = l->next) {
+        msg = l->data;
+        imcb_buddy_msg(fata->ic, msg->uid, (gchar*) msg->text, 0, 0);
+    }
+}
+
+/**
  * Creates a new #fb_data with an #account. The returned #fb_data
  * should be freed with #fb_data_free() when no longer needed.
  *
@@ -116,7 +137,8 @@ fb_data_t *fb_data_new(account_t *acc)
         .error    = fb_cb_api_error,
         .auth     = fb_cb_api_auth,
         .connect  = fb_cb_api_connect,
-        .contacts = fb_cb_api_contacts
+        .contacts = fb_cb_api_contacts,
+        .message  = fb_cb_api_message
     };
 
     g_return_val_if_fail(acc != NULL, NULL);
@@ -127,11 +149,12 @@ fb_data_t *fb_data_new(account_t *acc)
     fata->ic = imcb_new(acc);
     fata->ic->proto_data = fata;
 
-    fata->api->uid   = g_strdup(set_getstr(&acc->set, "uid"));
-    fata->api->token = g_strdup(set_getstr(&acc->set, "token"));
-    fata->api->cid   = g_strdup(set_getstr(&acc->set, "cid"));
-    fata->api->mid   = g_strdup(set_getstr(&acc->set, "mid"));
-    fata->api->cuid  = g_strdup(set_getstr(&acc->set, "cuid"));
+    fata->api->uid    = g_strdup(set_getstr(&acc->set, "uid"));
+    fata->api->token  = g_strdup(set_getstr(&acc->set, "token"));
+    fata->api->stoken = g_strdup(set_getstr(&acc->set, "stoken"));
+    fata->api->cid    = g_strdup(set_getstr(&acc->set, "cid"));
+    fata->api->mid    = g_strdup(set_getstr(&acc->set, "mid"));
+    fata->api->cuid   = g_strdup(set_getstr(&acc->set, "cuid"));
 
     fb_api_rehash(fata->api);
 
@@ -176,6 +199,9 @@ static void fb_init(account_t *acc)
 
     s = set_add(&acc->set, "token", NULL, NULL, acc);
     s->flags = SET_NULL_OK | SET_HIDDEN | SET_PASSWORD;
+
+    s = set_add(&acc->set, "stoken", NULL, NULL, acc);
+    s->flags = SET_NULL_OK | SET_HIDDEN;
 
     s = set_add(&acc->set, "uid", NULL, NULL, acc);
     s->flags = SET_NULL_OK | SET_HIDDEN;
@@ -229,6 +255,9 @@ static void fb_logout(struct im_connection *ic)
 static int fb_buddy_msg(struct im_connection *ic, char *to, char *message,
                         int flags)
 {
+    fb_data_t *fata = ic->proto_data;
+
+    fb_api_message(fata->api, to, message);
     return 0;
 }
 

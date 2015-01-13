@@ -37,225 +37,6 @@ GQuark fb_api_error_quark(void)
 }
 
 /**
- * Implements #fb_mqtt_funcs->error().
- *
- * @param mqtt The #fb_mqtt.
- * @param err  The #GError.
- * @param data The user-defined data, which is #fb_api.
- **/
-static void fb_api_cb_mqtt_error(fb_mqtt_t *mqtt, GError *err, gpointer data)
-{
-    fb_api_t *api = data;
-
-    if (api->err == NULL) {
-        api->err = g_error_copy(err);
-        fb_api_error(api, 0, NULL);
-    }
-}
-
-/**
- * Implements #fb_mqtt_funcs->open().
- *
- * @param mqtt The #fb_mqtt.
- * @param data The user-defined data, which is #fb_api.
- **/
-static void fb_api_cb_mqtt_open(fb_mqtt_t *mqtt, gpointer data)
-{
-    fb_api_t *api = data;
-    gchar    *msg;
-
-    static guint8 flags =
-        FB_MQTT_CONNECT_FLAG_USER |
-        FB_MQTT_CONNECT_FLAG_PASS |
-        FB_MQTT_CONNECT_FLAG_CLR;
-
-    msg = g_strdup_printf("{"
-            "\"u\":\"%s\","
-            "\"a\":\"" FB_API_AGENT "\","
-            "\"mqtt_sid\":%s,"
-            "\"d\":\"%s\","
-            "\"chat_on\":true"
-        "}", api->uid, api->mid, api->cuid);
-
-    fb_mqtt_connect(mqtt,
-        flags,      /* Flags */
-        api->cid,   /* Client identifier */
-        msg,        /* Will message */
-        api->token, /* Username */
-        NULL);
-
-    g_free(msg);
-}
-
-/**
- * Implements #fb_mqtt_funcs->connack().
- *
- * @param mqtt The #fb_mqtt.
- * @param data The user-defined data, which is #fb_api.
- **/
-static void fb_api_cb_mqtt_connack(fb_mqtt_t *mqtt, gpointer data)
-{
-    fb_api_t *api = data;
-
-    FB_API_FUNC(api, connect);
-}
-
-/**
- * Implements #fb_mqtt_funcs->publish(().
- *
- * @param mqtt  The #fb_mqtt.
- * @param topic The message topic.
- * @param pload The message payload.
- * @param data  The user-defined data, which is #fb_api.
- **/
-static void fb_api_cb_mqtt_publish(fb_mqtt_t *mqtt, const gchar *topic,
-                                   const GByteArray *pload, gpointer data)
-{
-    fb_api_t   *api = data;
-    GByteArray *bytes;
-    gboolean    comp;
-
-    comp = fb_util_zcompressed(pload);
-
-    if (G_LIKELY(comp)) {
-        bytes = fb_util_zuncompress(pload);
-
-        if (G_UNLIKELY(bytes == NULL)) {
-            fb_api_error(api, FB_API_ERROR, "Failed to decompress");
-            return;
-        }
-    } else {
-        bytes = (GByteArray*) pload;
-    }
-
-    fb_util_hexdump(bytes, 2, "Publishing:");
-
-    if (G_LIKELY(comp))
-        g_byte_array_free(bytes, TRUE);
-}
-
-/**
- * Creates a new #fb_api. The returned #fb_api should be freed with
- * #fb_api_free() when no longer needed.
- *
- * @param funcs The #fb_api_funcs.
- * @param data  The user-defined data or NULL.
- * @param cid   The client identifier or NULL.
- * @param mid   The MQTT identifier or NULL.
- * @param cuid  The client unique identifier or NULL.
- *
- * @return The #fb_api or NULL on error.
- **/
-fb_api_t *fb_api_new(const fb_api_funcs_t *funcs, gpointer data)
-{
-    fb_api_t *api;
-
-    static const fb_mqtt_funcs_t muncs = {
-        .error   = fb_api_cb_mqtt_error,
-        .open    = fb_api_cb_mqtt_open,
-        .connack = fb_api_cb_mqtt_connack,
-        .publish = fb_api_cb_mqtt_publish
-    };
-
-    g_return_val_if_fail(funcs != NULL, NULL);
-
-    api = g_new0(fb_api_t, 1);
-    memcpy(&api->funcs, funcs, sizeof *funcs);
-    api->data = data;
-    api->http = fb_http_new(FB_API_AGENT);
-    api->mqtt = fb_mqtt_new(&muncs, api);
-
-    return api;
-}
-
-/**
- * Rehashes the internal settings of a #fb_api.
- *
- * @param api The #fb_api.
- **/
-void fb_api_rehash(fb_api_t *api)
-{
-    sha1_state_t sha;
-    guint8       rb[50];
-
-    if (api->cid == NULL) {
-        random_bytes(rb, sizeof rb);
-        api->cid = g_compute_checksum_for_data(G_CHECKSUM_MD5, rb, sizeof rb);
-    }
-
-    if (api->mid == NULL)
-        api->mid = g_strdup_printf("%" G_GUINT32_FORMAT, g_random_int());
-
-    if (api->cuid == NULL) {
-        sha1_init(&sha);
-        random_bytes(rb, sizeof rb);
-        sha1_append(&sha, rb, sizeof rb);
-        api->cuid = sha1_random_uuid(&sha);
-    }
-
-    if (strlen(api->cid) > 20) {
-        api->cid = g_realloc_n(api->cid , 21, sizeof *api->cid);
-        api->cid[20] = 0;
-    }
-}
-
-/**
- * Frees all memory used by a #fb_api.
- *
- * @param api The #fb_api.
- **/
-void fb_api_free(fb_api_t *api)
-{
-    if (G_UNLIKELY(api == NULL))
-        return;
-
-    if (api->err != NULL)
-        g_error_free(api->err);
-
-    fb_mqtt_free(api->mqtt);
-    fb_http_free(api->http);
-
-    g_free(api->sid);
-    g_free(api->cuid);
-    g_free(api->mid);
-    g_free(api->cid);
-    g_free(api->token);
-    g_free(api->uid);
-    g_free(api);
-}
-
-/**
- * Handles an error within an #fb_api. This sets #fb_api->err and calls
- * the error function. If the fmt argument is NULL, then #fb_api->err
- * is handled.
- *
- * @param api The #fb_api.
- * @param err The #fb_api_error.
- * @param fmt The format string or NULL.
- * @param ... The arguments of the format string.
- **/
-void fb_api_error(fb_api_t *api, fb_api_error_t err, const gchar *fmt, ...)
-{
-    gchar   *str;
-    va_list  ap;
-
-    g_return_if_fail(api != NULL);
-
-    if (fmt != NULL) {
-        va_start(ap, fmt);
-        str = g_strdup_vprintf(fmt, ap);
-        va_end(ap);
-
-        g_clear_error(&api->err);
-        g_set_error_literal(&api->err, FB_API_ERROR, err, str);
-        g_free(str);
-    }
-
-    if (api->err != NULL)
-        FB_API_FUNC(api, error, api->err);
-}
-
-/**
  * Creates a new #json_value for JSON contents of the #fb_api. This
  * function is special in that it handles all errors, unlike the parent
  * function #fb_json_new(). The returned #json_value should be freed
@@ -381,6 +162,413 @@ static void fb_api_req_send(fb_api_t *api, fb_http_req_t *req)
     }
 
     fb_http_req_send(req);
+}
+
+/**
+ * Implements #fb_mqtt_funcs->error().
+ *
+ * @param mqtt The #fb_mqtt.
+ * @param err  The #GError.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_mqtt_error(fb_mqtt_t *mqtt, GError *err, gpointer data)
+{
+    fb_api_t *api = data;
+
+    if (api->err == NULL) {
+        api->err = g_error_copy(err);
+        fb_api_error(api, 0, NULL);
+    }
+}
+
+/**
+ * Implements #fb_mqtt_funcs->open().
+ *
+ * @param mqtt The #fb_mqtt.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_mqtt_open(fb_mqtt_t *mqtt, gpointer data)
+{
+    fb_api_t *api = data;
+    gchar    *msg;
+
+    static guint8 flags =
+        FB_MQTT_CONNECT_FLAG_USER |
+        FB_MQTT_CONNECT_FLAG_PASS |
+        FB_MQTT_CONNECT_FLAG_CLR;
+
+    msg = g_strdup_printf("{"
+            "\"u\":\"%s\","
+            "\"a\":\"" FB_API_AGENT "\","
+            "\"mqtt_sid\":%s,"
+            "\"d\":\"%s\","
+            "\"chat_on\":true,"
+            "\"no_auto_fg\":true,"
+            "\"fg\":false,"
+            "\"pf\":\"jz\","
+            "\"nwt\":1,"
+            "\"nwst\":0"
+        "}", api->uid, api->mid, api->cuid);
+
+    fb_mqtt_connect(mqtt,
+        flags,      /* Flags */
+        api->cid,   /* Client identifier */
+        msg,        /* Will message */
+        api->token, /* Username */
+        NULL);
+
+    g_free(msg);
+}
+
+/**
+ * Implemented #fb_http_func for the sequence identifier.
+ *
+ * @param req  The #fb_http_req.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_seqid(fb_http_req_t *req, gpointer data)
+{
+    fb_api_t    *api = data;
+    json_value  *json;
+    json_value  *jv;
+    const gchar *str;
+
+    json = fb_api_json_new(api, req->body, req->body_size);
+
+    if (json == NULL)
+        return;
+
+    /* Scattered values lead to a gnarly conditional... */
+    if (!fb_json_val_chk(json, "data", json_array, &jv) ||
+
+        /* Obtain the first array element */
+        (jv->u.array.length != 1) ||
+        ((jv = jv->u.array.values[0]) == NULL) ||
+
+        /* Check the name */
+        !fb_json_str_chk(jv, "name", &str) ||
+        (g_ascii_strcasecmp(str, "thread_list_ids") != 0) ||
+
+        /* Obtain the sequence identifier */
+        !fb_json_val_chk(jv, "fql_result_set", json_array, &jv) ||
+        (jv->u.array.length != 1) ||
+        !fb_json_str_chk(jv->u.array.values[0], "sync_sequence_id", &str))
+    {
+        fb_api_error(api, FB_API_ERROR, "Failed to obtain SequenceID");
+        goto finish;
+    }
+
+    if (G_UNLIKELY(api->stoken == NULL)) {
+        fb_api_publish(api, "/messenger_sync_create_queue", "{"
+                "\"device_params\":{},"
+                "\"encoding\":\"JSON\","
+                "\"max_deltas_able_to_process\":1250,"
+                "\"initial_titan_sequence_id\":%s,"
+                "\"sync_api_version\":2,"
+                "\"delta_batch_size\":125,"
+                "\"device_id\":\"%s\""
+            "}", str, api->cuid);
+
+        goto finish;
+    }
+
+    fb_api_publish(api, "/messenger_sync_get_diffs", "{"
+            "\"encoding\":\"JSON\","
+            "\"last_seq_id\":%s,"
+            "\"max_deltas_able_to_process\":1250,"
+            "\"sync_api_version\":2,"
+            "\"sync_token\":\"%s\","
+            "\"delta_batch_size\":125"
+        "}", str, api->stoken);
+
+    FB_API_FUNC(api, connect);
+
+finish:
+    json_value_free(json);
+}
+
+/**
+ * Implements #fb_mqtt_funcs->connack().
+ *
+ * @param mqtt The #fb_mqtt.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_mqtt_connack(fb_mqtt_t *mqtt, gpointer data)
+{
+    fb_api_t      *api = data;
+    fb_http_req_t *req;
+
+    fb_api_publish(api, "/foreground_state", "{"
+            "\"foreground\": true,"
+            "\"keepalive_timeout\": %d"
+        "}", FB_MQTT_KA);
+
+    fb_mqtt_subscribe(mqtt,
+        "/quick_promotion_refresh", 0,
+        "/webrtc", 0,
+        "/delete_messages_notification", 0,
+        "/orca_message_notifications", 0,
+        "/messaging_events", 0,
+        "/mercury", 0,
+        "/t_rtc", 0,
+        "/inbox", 0,
+        "/orca_presence", 0,
+        "/webrtc_response", 0,
+        "/push_notification", 0,
+        "/pp", 0,
+        "/orca_typing_notifications", 0,
+        "/t_ms", 0,
+        "/t_p", 0,
+        NULL
+    );
+
+    req = fb_api_req_new(api, FB_API_GHOST, FB_API_PATH_FQL,
+                         fb_api_cb_seqid,
+                         "com.facebook.orca.protocol.methods.u",
+                         "fetchThreadList",
+                         "GET");
+
+    static const gchar *query = "{"
+        "\"thread_list_ids\":\""
+            "SELECT sync_sequence_id "
+                "FROM unified_thread "
+                "WHERE folder='inbox' "
+                "ORDER BY sync_sequence_id "
+                "DESC LIMIT 1\""
+        "}";
+
+    fb_http_req_params_set(req, FB_HTTP_PAIR("q", query), NULL);
+    fb_api_req_send(api, req);
+}
+
+/**
+ * Handles messages which are to be published to the user.
+ *
+ * @param api   The #fb_api.
+ * @param pload The message payload.
+ **/
+static void fb_api_cb_publish_ms(fb_api_t *api, const GByteArray *pload)
+{
+    GSList       *msgs;
+    fb_api_msg_t *msg;
+    json_value   *json;
+    json_value   *jv;
+    json_value   *jx;
+    json_value   *jy;
+    json_value   *jz;
+    const gchar  *str;
+    gint64        in;
+    gint64        auid;
+    guint         i;
+
+    /* Start at 1 to skip the NULL byte */
+    json = fb_api_json_new(api, (gchar*) pload->data + 1, pload->len - 1);
+    auid = g_ascii_strtoll(api->uid, NULL, 10);
+    msgs = NULL;
+
+    if (json == NULL)
+        return;
+
+    if (fb_json_str_chk(json, "syncToken", &str)) {
+        g_free(api->stoken);
+        api->stoken = g_strdup(str);
+        FB_API_FUNC(api, connect);
+        goto finish;
+    }
+
+    if (!fb_json_val_chk(json, "deltas", json_array, &jv))
+        goto finish;
+
+    for (i = 0; i < jv->u.array.length; i++) {
+        jx = jv->u.array.values[i];
+
+        if (!fb_json_val_chk(jx, "deltaNewMessage", json_object, &jy) ||
+            !fb_json_val_chk(jy, "messageMetadata", json_object, &jz) ||
+            !fb_json_int_chk(jz, "actorFbId", &in) ||
+            (in == auid))
+        {
+            continue;
+        }
+
+        if (fb_json_str_chk(jy, "body", &str)) {
+            msg = fb_api_msg_new(NULL, str);
+            msg->uid = g_strdup_printf("%" G_GINT64_FORMAT, in);
+            msgs = g_slist_prepend(msgs, msg);
+        }
+
+        if (fb_json_val_chk(jy, "attachments", json_array, &jy) &&
+            (jy->u.array.length > 0))
+        {
+            msg = fb_api_msg_new(NULL, "* Non-Displayable Attachments *");
+            msg->uid = g_strdup_printf("%" G_GINT64_FORMAT, in);
+            msgs = g_slist_prepend(msgs, msg);
+        }
+    }
+
+    msgs = g_slist_reverse(msgs);
+    FB_API_FUNC(api, message, msgs);
+
+finish:
+    g_slist_free_full(msgs, (GDestroyNotify) fb_api_msg_free);
+    json_value_free(json);
+}
+
+/**
+ * Implements #fb_mqtt_funcs->publish(().
+ *
+ * @param mqtt  The #fb_mqtt.
+ * @param topic The message topic.
+ * @param pload The message payload.
+ * @param data  The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_mqtt_publish(fb_mqtt_t *mqtt, const gchar *topic,
+                                   const GByteArray *pload, gpointer data)
+{
+    fb_api_t   *api = data;
+    GByteArray *bytes;
+    gboolean    comp;
+
+    comp = fb_util_zcompressed(pload);
+
+    if (G_LIKELY(comp)) {
+        bytes = fb_util_zuncompress(pload);
+
+        if (G_UNLIKELY(bytes == NULL)) {
+            fb_api_error(api, FB_API_ERROR, "Failed to decompress");
+            return;
+        }
+    } else {
+        bytes = (GByteArray*) pload;
+    }
+
+    fb_util_hexdump(bytes, 2, "Reading message:");
+
+    if (g_ascii_strcasecmp(topic, "/t_ms") == 0)
+        fb_api_cb_publish_ms(api, bytes);
+
+    if (G_LIKELY(comp))
+        g_byte_array_free(bytes, TRUE);
+}
+
+/**
+ * Creates a new #fb_api. The returned #fb_api should be freed with
+ * #fb_api_free() when no longer needed.
+ *
+ * @param funcs The #fb_api_funcs.
+ * @param data  The user-defined data or NULL.
+ * @param cid   The client identifier or NULL.
+ * @param mid   The MQTT identifier or NULL.
+ * @param cuid  The client unique identifier or NULL.
+ *
+ * @return The #fb_api or NULL on error.
+ **/
+fb_api_t *fb_api_new(const fb_api_funcs_t *funcs, gpointer data)
+{
+    fb_api_t *api;
+
+    static const fb_mqtt_funcs_t muncs = {
+        .error   = fb_api_cb_mqtt_error,
+        .open    = fb_api_cb_mqtt_open,
+        .connack = fb_api_cb_mqtt_connack,
+        .publish = fb_api_cb_mqtt_publish
+    };
+
+    g_return_val_if_fail(funcs != NULL, NULL);
+
+    api = g_new0(fb_api_t, 1);
+    memcpy(&api->funcs, funcs, sizeof *funcs);
+    api->data = data;
+    api->http = fb_http_new(FB_API_AGENT);
+    api->mqtt = fb_mqtt_new(&muncs, api);
+
+    return api;
+}
+
+/**
+ * Rehashes the internal settings of a #fb_api.
+ *
+ * @param api The #fb_api.
+ **/
+void fb_api_rehash(fb_api_t *api)
+{
+    sha1_state_t sha;
+    guint8       rb[50];
+
+    if (api->cid == NULL) {
+        random_bytes(rb, sizeof rb);
+        api->cid = g_compute_checksum_for_data(G_CHECKSUM_MD5, rb, sizeof rb);
+    }
+
+    if (api->mid == 0)
+        api->mid = g_strdup_printf("%" G_GUINT32_FORMAT, g_random_int());
+
+    if (api->cuid == NULL) {
+        sha1_init(&sha);
+        random_bytes(rb, sizeof rb);
+        sha1_append(&sha, rb, sizeof rb);
+        api->cuid = sha1_random_uuid(&sha);
+    }
+
+    if (strlen(api->cid) > 20) {
+        api->cid = g_realloc_n(api->cid , 21, sizeof *api->cid);
+        api->cid[20] = 0;
+    }
+}
+
+/**
+ * Frees all memory used by a #fb_api.
+ *
+ * @param api The #fb_api.
+ **/
+void fb_api_free(fb_api_t *api)
+{
+    if (G_UNLIKELY(api == NULL))
+        return;
+
+    if (api->err != NULL)
+        g_error_free(api->err);
+
+    fb_mqtt_free(api->mqtt);
+    fb_http_free(api->http);
+
+    g_free(api->cuid);
+    g_free(api->mid);
+    g_free(api->cid);
+    g_free(api->stoken);
+    g_free(api->token);
+    g_free(api->uid);
+    g_free(api);
+}
+
+/**
+ * Handles an error within an #fb_api. This sets #fb_api->err and calls
+ * the error function. If the fmt argument is NULL, then #fb_api->err
+ * is handled.
+ *
+ * @param api The #fb_api.
+ * @param err The #fb_api_error.
+ * @param fmt The format string or NULL.
+ * @param ... The arguments of the format string.
+ **/
+void fb_api_error(fb_api_t *api, fb_api_error_t err, const gchar *fmt, ...)
+{
+    gchar   *str;
+    va_list  ap;
+
+    g_return_if_fail(api != NULL);
+
+    if (fmt != NULL) {
+        va_start(ap, fmt);
+        str = g_strdup_vprintf(fmt, ap);
+        va_end(ap);
+
+        g_clear_error(&api->err);
+        g_set_error_literal(&api->err, FB_API_ERROR, err, str);
+        g_free(str);
+    }
+
+    if (api->err != NULL)
+        FB_API_FUNC(api, error, api->err);
 }
 
 /**
@@ -568,6 +756,100 @@ void fb_api_disconnect(fb_api_t *api)
     g_return_if_fail(api != NULL);
 
     fb_mqtt_disconnect(api->mqtt);
+}
+
+/**
+ * Sends a message to a user.
+ *
+ * @param api The #fb_api.
+ * @param uid The target user identifier.
+ * @param msg The message.
+ **/
+void fb_api_message(fb_api_t *api, const gchar *uid, const gchar *msg)
+{
+    guint64 msgid;
+
+    g_return_if_fail(api != NULL);
+    g_return_if_fail(uid != NULL);
+    g_return_if_fail(msg != NULL);
+
+    msgid = FB_API_MSGID(g_get_real_time() / 1000, g_random_int());
+
+    fb_api_publish(api, "/send_message2", "{"
+            "\"body\":\"%s\","
+            "\"to\":\"%s\","
+            "\"sender_fbid\":\"%s\","
+            "\"msgid\":%" G_GUINT64_FORMAT
+        "}", msg, uid, api->uid, msgid);
+}
+
+/**
+ * Publishes a string based message to the MQTT service. This enables
+ * compression of the message via zlib.
+ *
+ * @param api   The #fb_api.
+ * @param topic The message topic.
+ * @param fmt   The format string.
+ * @param ...   The format arguments.
+ **/
+void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...)
+{
+    GByteArray *bytes;
+    GByteArray *cytes;
+    gchar      *msg;
+    va_list     ap;
+
+    g_return_if_fail(api   != NULL);
+    g_return_if_fail(topic != NULL);
+    g_return_if_fail(fmt   != NULL);
+
+    va_start(ap, fmt);
+    msg = g_strdup_vprintf(fmt, ap);
+    va_end(ap);
+
+    bytes = g_byte_array_new_take((guint8*) msg, strlen(msg));
+    cytes = fb_util_zcompress(bytes);
+
+    fb_util_hexdump(bytes, 2, "Writing message:");
+    fb_mqtt_publish(api->mqtt, topic, cytes);
+
+    g_byte_array_free(cytes, TRUE);
+    g_byte_array_free(bytes, TRUE);
+}
+
+/**
+ * Creates a new #fb_api_msg. The returned #fb_api_msg should be freed
+ * with #fb_api_msg_free() when no longer needed.
+ *
+ * @param uid  The user identifier.
+ * @param text The message text.
+ *
+ * @return The #fb_api_msg or NULL on error.
+ **/
+fb_api_msg_t *fb_api_msg_new(const gchar *uid, const gchar *text)
+{
+    fb_api_msg_t *msg;
+
+    msg = g_new0(fb_api_msg_t, 1);
+    msg->uid  = g_strdup(uid);
+    msg->text = g_strdup(text);
+
+    return msg;
+}
+
+/**
+ * Frees all memory used by a #fb_api_msg.
+ *
+ * @param msg The #fb_api_msg.
+ **/
+void fb_api_msg_free(fb_api_msg_t *msg)
+{
+    if (G_UNLIKELY(msg == NULL))
+        return;
+
+    g_free(msg->text);
+    g_free(msg->uid);
+    g_free(msg);
 }
 
 /**
