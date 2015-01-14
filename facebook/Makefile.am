@@ -9,12 +9,14 @@ facebook_la_SOURCES = \
 	facebook-http.c \
 	facebook-json.c \
 	facebook-mqtt.c \
+	facebook-thrift.c \
 	facebook-util.c \
 	facebook.h \
 	facebook-api.h
 	facebook-http.h \
 	facebook-json.h \
 	facebook-mqtt.h \
+	facebook-thrift.h \
 	facebook-util.h
 
 # Build the library as a module
