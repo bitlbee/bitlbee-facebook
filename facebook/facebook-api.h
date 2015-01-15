@@ -172,6 +172,7 @@ struct fb_api
     fb_http_t *http;      /** The #fb_http. **/
     fb_mqtt_t *mqtt;      /** The #fb_mqtt. **/
     GError    *err;       /** The #GError or NULL. **/
+    GQueue    *msgs;      /** The #GQueue of raw messages. **/
 
     gchar *uid;           /** The user identifier. **/
     gchar *token;         /** The session token. **/
