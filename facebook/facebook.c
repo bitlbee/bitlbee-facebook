@@ -61,20 +61,11 @@ static void fb_cb_api_auth(fb_api_t *api, gpointer data)
  **/
 static void fb_cb_api_connect(fb_api_t *api, gpointer data)
 {
-    fb_data_t  *fata = data;
-    account_t  *acc  = fata->ic->acc;
-    GSList     *l;
-    bee_user_t *bu;
+    fb_data_t *fata = data;
+    account_t *acc  = fata->ic->acc;
 
     imcb_connected(fata->ic);
     set_setstr(&acc->set, "stoken", api->stoken);
-
-    for (l = fata->ic->bee->users; l != NULL; l = l->next) {
-        bu = l->data;
-
-        /* For now, all users are online */
-        imcb_buddy_status(fata->ic, bu->handle, OPT_LOGGED_IN, NULL, NULL);
-    }
 }
 
 /**
@@ -122,6 +113,32 @@ static void fb_cb_api_message(fb_api_t *api, const GSList *msgs, gpointer data)
 }
 
 /**
+ * Implemented #fb_api_funcs->presence().
+ *
+ * @param api   The #fb_api.
+ * @param press The #GSList of #fb_api_msg.
+ * @param data  The user defined data, which is #fb_data.
+ **/
+static void fb_cb_api_presence(fb_api_t *api, const GSList *press,
+                               gpointer data)
+{
+    fb_data_t     *fata = data;
+    fb_api_pres_t *pres;
+    const GSList  *l;
+    guint          flags;
+
+    for (l = press; l != NULL; l = l->next) {
+        pres  = l->data;
+        flags = 0;
+
+        if (pres->active)
+            flags |= OPT_LOGGED_IN;
+
+        imcb_buddy_status(fata->ic, pres->uid, flags, NULL, NULL);
+    }
+}
+
+/**
  * Creates a new #fb_data with an #account. The returned #fb_data
  * should be freed with #fb_data_free() when no longer needed.
  *
@@ -138,7 +155,8 @@ fb_data_t *fb_data_new(account_t *acc)
         .auth     = fb_cb_api_auth,
         .connect  = fb_cb_api_connect,
         .contacts = fb_cb_api_contacts,
-        .message  = fb_cb_api_message
+        .message  = fb_cb_api_message,
+        .presence = fb_cb_api_presence
     };
 
     g_return_val_if_fail(acc != NULL, NULL);

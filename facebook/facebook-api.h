@@ -79,6 +79,9 @@ typedef struct fb_api_funcs fb_api_funcs_t;
 /** The structure for representing an #fb_api message. **/
 typedef struct fb_api_msg fb_api_msg_t;
 
+/** The structure for representing an #fb_api presence. **/
+typedef struct fb_api_pres fb_api_pres_t;
+
 /** The structure for representing an #fb_api user. **/
 typedef struct fb_api_user fb_api_user_t;
 
@@ -146,6 +149,16 @@ struct fb_api_funcs
      * @param data The user-defined data or NULL.
      **/
     void (*message) (fb_api_t *api, const GSList *msgs, gpointer data);
+
+    /**
+     * The presence function. This is called whenever the #fb_api has
+     * retrieved a presence update.
+     *
+     * @param api   The #fb_api.
+     * @param press The #GSList of #fb_api_pres.
+     * @param data  The user-defined data or NULL.
+     **/
+    void (*presence) (fb_api_t *api, const GSList *press, gpointer data);
 };
 
 /**
@@ -175,6 +188,15 @@ struct fb_api_msg
 {
     gchar *uid;  /** The user identifier. **/
     gchar *text; /** The message text. **/
+};
+
+/**
+ * The structure for representing an #fb_api presence.
+ **/
+struct fb_api_pres
+{
+    gchar    *uid;    /** The user identifier. **/
+    gboolean  active; /** TRUE if the user is active. **/
 };
 
 /**
@@ -214,6 +236,10 @@ void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...);
 fb_api_msg_t *fb_api_msg_new(const gchar *uid, const gchar *text);
 
 void fb_api_msg_free(fb_api_msg_t *msg);
+
+fb_api_pres_t *fb_api_pres_new(const gchar *uid, gboolean online);
+
+void fb_api_pres_free(fb_api_pres_t *pres);
 
 fb_api_user_t *fb_api_user_new(const gchar *uid, const gchar *name);
 

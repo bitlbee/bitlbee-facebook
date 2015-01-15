@@ -20,6 +20,7 @@
 #include <sha1.h>
 
 #include "facebook-api.h"
+#include "facebook-thrift.h"
 
 /**
  * Gets the error domain for #fb_api.
@@ -414,6 +415,91 @@ finish:
 }
 
 /**
+ * Handles a presence states which are to be published to the user.
+ *
+ * @param api   The #fb_api.
+ * @param pload The message payload.
+ **/
+static void fb_api_cb_publish_p(fb_api_t *api, const GByteArray *pload)
+{
+    fb_thrift_t      *thft;
+    fb_thrift_type_t  type;
+    fb_api_pres_t    *pres;
+    GSList           *press;
+    gint64            i64;
+    gint32            i32;
+    guint             size;
+    guint             i;
+
+    /* Start at 1 to skip the NULL byte */
+    thft  = fb_thrift_new((GByteArray*) pload, 1, TRUE);
+    press = NULL;
+
+    /* Skip the full list boolean field */
+    fb_thrift_read_field(thft, &type, NULL);
+    g_warn_if_fail(type == FB_THRIFT_TYPE_BOOL);
+    fb_thrift_read_bool(thft, NULL);
+
+    /* Read the list field */
+    fb_thrift_read_field(thft, &type, NULL);
+    g_warn_if_fail(type == FB_THRIFT_TYPE_LIST);
+
+    /* Read the list */
+    fb_thrift_read_list(thft, &type, &size);
+    g_warn_if_fail(type == FB_THRIFT_TYPE_STRUCT);
+
+    for (i = 0; i < size; i++) {
+        /* Read the user identifier field */
+        fb_thrift_read_field(thft, &type, NULL);
+        g_warn_if_fail(type == FB_THRIFT_TYPE_I64);
+        fb_thrift_read_i64(thft, &i64);
+
+        /* Read the active field */
+        fb_thrift_read_field(thft, &type, NULL);
+        g_warn_if_fail(type == FB_THRIFT_TYPE_I32);
+        fb_thrift_read_i32(thft, &i32);
+
+        pres = fb_api_pres_new(NULL, i32 != 0);
+        pres->uid = g_strdup_printf("%" G_GINT64_FORMAT, i64);
+        press = g_slist_prepend(press, pres);
+
+        FB_UTIL_DEBUGLN("Presence: %s (%d)", pres->uid, pres->active);
+
+        /* Skip the last active timestamp field */
+        if (!fb_thrift_read_field(thft, &type, NULL))
+            continue;
+
+        g_warn_if_fail(type == FB_THRIFT_TYPE_I64);
+        fb_thrift_read_i64(thft, NULL);
+
+        /* Skip the active client bits field */
+        if (!fb_thrift_read_field(thft, &type, NULL))
+            continue;
+
+        g_warn_if_fail(type == FB_THRIFT_TYPE_I16);
+        fb_thrift_read_i16(thft, NULL);
+
+        /* Skip the VoIP compatibility bits field */
+        if (!fb_thrift_read_field(thft, &type, NULL))
+            continue;
+
+        g_warn_if_fail(type == FB_THRIFT_TYPE_I64);
+        fb_thrift_read_i64(thft, NULL);
+
+        /* Read the field stop */
+        fb_thrift_read_stop(thft);
+    }
+
+    /* Read the field stop */
+    fb_thrift_read_stop(thft);
+    fb_thrift_free(thft);
+
+    press = g_slist_reverse(press);
+    FB_API_FUNC(api, presence, press);
+    g_slist_free_full(press, (GDestroyNotify) fb_api_pres_free);
+}
+
+/**
  * Implements #fb_mqtt_funcs->publish(().
  *
  * @param mqtt  The #fb_mqtt.
@@ -445,6 +531,8 @@ static void fb_api_cb_mqtt_publish(fb_mqtt_t *mqtt, const gchar *topic,
 
     if (g_ascii_strcasecmp(topic, "/t_ms") == 0)
         fb_api_cb_publish_ms(api, bytes);
+    else if (g_ascii_strcasecmp(topic, "/t_p") == 0)
+        fb_api_cb_publish_p(api, bytes);
 
     if (G_LIKELY(comp))
         g_byte_array_free(bytes, TRUE);
@@ -850,6 +938,40 @@ void fb_api_msg_free(fb_api_msg_t *msg)
     g_free(msg->text);
     g_free(msg->uid);
     g_free(msg);
+}
+
+/**
+ * Creates a new #fb_api_pres. The returned #fb_api_pres should be
+ * freed with #fb_api_pres_free() when no longer needed.
+ *
+ * @param uid    The user identifier.
+ * @param active TRUE if the user is active, otherwise FALSE.
+ *
+ * @return The #fb_api_pres or NULL on error.
+ **/
+fb_api_pres_t *fb_api_pres_new(const gchar *uid, gboolean active)
+{
+    fb_api_pres_t *pres;
+
+    pres = g_new0(fb_api_pres_t, 1);
+    pres->uid    = g_strdup(uid);
+    pres->active = active;
+
+    return pres;
+}
+
+/**
+ * Frees all memory used by a #fb_api_pres.
+ *
+ * @param pres The #fb_api_pres.
+ **/
+void fb_api_pres_free(fb_api_pres_t *pres)
+{
+    if (G_UNLIKELY(pres == NULL))
+        return;
+
+    g_free(pres->uid);
+    g_free(pres);
 }
 
 /**
