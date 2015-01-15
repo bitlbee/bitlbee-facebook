@@ -30,6 +30,12 @@ Building and Installing:
     $ make install
 
 Usage:
+  Before continuing, please note, it is recommended that you use an app
+  password for your Facebook account. Not only is this more secure than
+  leaving your password within bitlbee, but it allows the usage of two
+  factor authentication methods. An app password can be generated via
+  the security page on the Facebook website.
+
   Getting started:
     > account add facebook <username> <password>
     > account <acc> on
