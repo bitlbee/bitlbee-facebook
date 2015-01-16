@@ -44,8 +44,10 @@ static void fb_cb_api_auth(fb_api_t *api, gpointer data)
 {
     fb_data_t *fata = data;
     account_t *acc  = fata->ic->acc;
+    gchar      uid[FB_ID_STRMAX];
 
-    set_setstr(&acc->set, "uid",   api->uid);
+    FB_ID_TO_STR(api->uid, uid);
+    set_setstr(&acc->set, "uid",   uid);
     set_setstr(&acc->set, "token", api->token);
     imcb_log(fata->ic, "Authentication finished");
 
@@ -81,12 +83,14 @@ static void fb_cb_api_contacts(fb_api_t *api, const GSList *users,
     fb_data_t     *fata = data;
     fb_api_user_t *user;
     const GSList  *l;
+    gchar          uid[FB_ID_STRMAX];
 
     for (l = users; l != NULL; l = l->next) {
         user = l->data;
-        imcb_add_buddy(fata->ic, user->uid, NULL);
-        imcb_buddy_nick_hint(fata->ic, user->uid, user->name);
-        imcb_rename_buddy(fata->ic, user->uid, user->name);
+        FB_ID_TO_STR(user->uid, uid);
+        imcb_add_buddy(fata->ic, uid, NULL);
+        imcb_buddy_nick_hint(fata->ic, uid, user->name);
+        imcb_rename_buddy(fata->ic, uid, user->name);
     }
 
     imcb_log(fata->ic, "Establishing connection");
@@ -105,10 +109,12 @@ static void fb_cb_api_message(fb_api_t *api, const GSList *msgs, gpointer data)
     fb_data_t    *fata = data;
     fb_api_msg_t *msg;
     const GSList *l;
+    gchar         uid[FB_ID_STRMAX];
 
     for (l = msgs; l != NULL; l = l->next) {
         msg = l->data;
-        imcb_buddy_msg(fata->ic, msg->uid, (gchar*) msg->text, 0, 0);
+        FB_ID_TO_STR(msg->uid, uid);
+        imcb_buddy_msg(fata->ic, uid, (gchar*) msg->text, 0, 0);
     }
 }
 
@@ -126,6 +132,7 @@ static void fb_cb_api_presence(fb_api_t *api, const GSList *press,
     fb_api_pres_t *pres;
     const GSList  *l;
     guint          flags;
+    gchar          uid[FB_ID_STRMAX];
 
     for (l = press; l != NULL; l = l->next) {
         pres  = l->data;
@@ -134,7 +141,8 @@ static void fb_cb_api_presence(fb_api_t *api, const GSList *press,
         if (pres->active)
             flags |= OPT_LOGGED_IN;
 
-        imcb_buddy_status(fata->ic, pres->uid, flags, NULL, NULL);
+        FB_ID_TO_STR(pres->uid, uid);
+        imcb_buddy_status(fata->ic, uid, flags, NULL, NULL);
     }
 }
 
@@ -150,9 +158,11 @@ static void fb_cb_api_typing(fb_api_t *api, fb_api_typing_t *typg,
 {
     fb_data_t *fata = data;
     guint32    flags;
+    gchar      uid[FB_ID_STRMAX];
 
+    FB_ID_TO_STR(typg->uid, uid);
     flags = typg->state ? OPT_TYPING : 0;
-    imcb_buddy_typing(fata->ic, typg->uid, flags);
+    imcb_buddy_typing(fata->ic, uid, flags);
 }
 
 /**
@@ -166,6 +176,7 @@ static void fb_cb_api_typing(fb_api_t *api, fb_api_typing_t *typg,
 fb_data_t *fb_data_new(account_t *acc)
 {
     fb_data_t *fata;
+    gchar     *uid;
 
     static const fb_api_funcs_t funcs = {
         .error    = fb_cb_api_error,
@@ -185,7 +196,11 @@ fb_data_t *fb_data_new(account_t *acc)
     fata->ic = imcb_new(acc);
     fata->ic->proto_data = fata;
 
-    fata->api->uid    = g_strdup(set_getstr(&acc->set, "uid"));
+    uid = set_getstr(&acc->set, "uid");
+
+    if (uid != NULL)
+        fata->api->uid = FB_ID_FROM_STR(uid);
+
     fata->api->token  = g_strdup(set_getstr(&acc->set, "token"));
     fata->api->stoken = g_strdup(set_getstr(&acc->set, "stoken"));
     fata->api->cid    = g_strdup(set_getstr(&acc->set, "cid"));
@@ -292,8 +307,10 @@ static int fb_buddy_msg(struct im_connection *ic, char *to, char *message,
                         int flags)
 {
     fb_data_t *fata = ic->proto_data;
+    fb_id_t    uid;
 
-    fb_api_message(fata->api, to, message);
+    uid = FB_ID_FROM_STR(to);
+    fb_api_message(fata->api, uid, message);
     return 0;
 }
 
@@ -309,10 +326,12 @@ static int fb_buddy_msg(struct im_connection *ic, char *to, char *message,
 static int fb_send_typing(struct im_connection *ic, char *who, int flags)
 {
     fb_data_t *fata = ic->proto_data;
+    fb_id_t    uid;
     gboolean   state;
 
+    uid   = FB_ID_FROM_STR(who);
     state = (flags & OPT_TYPING) != 0;
-    fb_api_typing(fata->api, who, state);
+    fb_api_typing(fata->api, uid, state);
     return 0;
 }
 

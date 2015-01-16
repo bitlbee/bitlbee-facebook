@@ -199,7 +199,7 @@ static void fb_api_cb_mqtt_open(fb_mqtt_t *mqtt, gpointer data)
         FB_MQTT_CONNECT_FLAG_CLR;
 
     msg = g_strdup_printf("{"
-            "\"u\":\"%s\","
+            "\"u\":\"%" FB_ID_FORMAT "\","
             "\"a\":\"" FB_API_AGENT "\","
             "\"mqtt_sid\":%s,"
             "\"d\":\"%s\","
@@ -351,7 +351,7 @@ static void fb_api_cb_mqtt_connack(fb_mqtt_t *mqtt, gpointer data)
 static void fb_api_cb_publish_tn(fb_api_t *api, const GByteArray *pload)
 {
     json_value      *json;
-    fb_api_typing_t *typg;
+    fb_api_typing_t  typg;
     const gchar     *str;
     gint64           uid;
     gint64           state;
@@ -374,10 +374,9 @@ static void fb_api_cb_publish_tn(fb_api_t *api, const GByteArray *pload)
         goto finish;
     }
 
-    typg = fb_api_typing_new(NULL, state != 0);
-    typg->uid = g_strdup_printf("%" G_GINT64_FORMAT, uid);
-    FB_API_FUNC(api, typing, typg);
-    fb_api_typing_free(typg);
+    typg.uid   = uid;
+    typg.state = state;
+    FB_API_FUNC(api, typing, &typg);
 
 finish:
     json_value_free(json);
@@ -426,7 +425,7 @@ finish:
 static void fb_api_cb_publish_ms(fb_api_t *api, const GByteArray *pload)
 {
     GSList       *msgs;
-    fb_api_msg_t *msg;
+    fb_api_msg_t  msg;
     json_value   *json;
     json_value   *jv;
     json_value   *jx;
@@ -434,12 +433,10 @@ static void fb_api_cb_publish_ms(fb_api_t *api, const GByteArray *pload)
     json_value   *jz;
     const gchar  *str;
     gint64        in;
-    gint64        auid;
     guint         i;
 
     /* Start at 1 to skip the NULL byte */
     json = fb_api_json_new(api, (gchar*) pload->data + 1, pload->len - 1);
-    auid = g_ascii_strtoll(api->uid, NULL, 10);
     msgs = NULL;
 
     if (json == NULL)
@@ -461,23 +458,23 @@ static void fb_api_cb_publish_ms(fb_api_t *api, const GByteArray *pload)
         if (!fb_json_val_chk(jx, "deltaNewMessage", json_object, &jy) ||
             !fb_json_val_chk(jy, "messageMetadata", json_object, &jz) ||
             !fb_json_int_chk(jz, "actorFbId", &in) ||
-            (in == auid))
+            (in == api->uid))
         {
             continue;
         }
 
+        msg.uid = in;
+
         if (fb_json_str_chk(jy, "body", &str)) {
-            msg = fb_api_msg_new(NULL, str);
-            msg->uid = g_strdup_printf("%" G_GINT64_FORMAT, in);
-            msgs = g_slist_prepend(msgs, msg);
+            msg.text = str;
+            msgs = g_slist_prepend(msgs, g_memdup(&msg, sizeof msg));
         }
 
         if (fb_json_val_chk(jy, "attachments", json_array, &jy) &&
             (jy->u.array.length > 0))
         {
-            msg = fb_api_msg_new(NULL, "* Non-Displayable Attachments *");
-            msg->uid = g_strdup_printf("%" G_GINT64_FORMAT, in);
-            msgs = g_slist_prepend(msgs, msg);
+            msg.text = "* Non-Displayable Attachments *";
+            msgs = g_slist_prepend(msgs, g_memdup(&msg, sizeof msg));
         }
     }
 
@@ -485,7 +482,7 @@ static void fb_api_cb_publish_ms(fb_api_t *api, const GByteArray *pload)
     FB_API_FUNC(api, message, msgs);
 
 finish:
-    g_slist_free_full(msgs, (GDestroyNotify) fb_api_msg_free);
+    g_slist_free_full(msgs, g_free);
     json_value_free(json);
 }
 
@@ -499,7 +496,7 @@ static void fb_api_cb_publish_p(fb_api_t *api, const GByteArray *pload)
 {
     fb_thrift_t      *thft;
     fb_thrift_type_t  type;
-    fb_api_pres_t    *pres;
+    fb_api_pres_t     pres;
     GSList           *press;
     gint64            i64;
     gint32            i32;
@@ -534,11 +531,10 @@ static void fb_api_cb_publish_p(fb_api_t *api, const GByteArray *pload)
         g_warn_if_fail(type == FB_THRIFT_TYPE_I32);
         fb_thrift_read_i32(thft, &i32);
 
-        pres = fb_api_pres_new(NULL, i32 != 0);
-        pres->uid = g_strdup_printf("%" G_GINT64_FORMAT, i64);
-        press = g_slist_prepend(press, pres);
-
-        FB_UTIL_DEBUGLN("Presence: %s (%d)", pres->uid, pres->active);
+        pres.uid    = i64;
+        pres.active = i32 != 0;
+        press = g_slist_prepend(press, g_memdup(&pres, sizeof pres));
+        FB_UTIL_DEBUGLN("Presence: %" FB_ID_FORMAT " (%d)", i64, i32 != 0);
 
         /* Skip the last active timestamp field */
         if (!fb_thrift_read_field(thft, &type, NULL))
@@ -571,7 +567,7 @@ static void fb_api_cb_publish_p(fb_api_t *api, const GByteArray *pload)
 
     press = g_slist_reverse(press);
     FB_API_FUNC(api, presence, press);
-    g_slist_free_full(press, (GDestroyNotify) fb_api_pres_free);
+    g_slist_free_full(press, g_free);
 }
 
 /**
@@ -706,7 +702,6 @@ void fb_api_free(fb_api_t *api)
     g_free(api->cid);
     g_free(api->stoken);
     g_free(api->token);
-    g_free(api->uid);
     g_free(api);
 }
 
@@ -766,11 +761,10 @@ static void fb_api_cb_auth(fb_http_req_t *req, gpointer data)
         goto finish;
     }
 
-    g_free(api->uid);
-    api->uid = g_strdup_printf("%" G_GINT64_FORMAT, in);
-
     g_free(api->token);
     api->token = g_strdup(str);
+
+    api->uid = in;
     FB_API_FUNC(api, auth);
 
 finish:
@@ -815,7 +809,7 @@ static void fb_api_cb_contacts(fb_http_req_t *req, gpointer data)
 {
     fb_api_t      *api = data;
     GSList        *users;
-    fb_api_user_t *user;
+    fb_api_user_t  user;
     json_value    *json;
     json_value    *jv;
     json_value    *jx;
@@ -844,34 +838,39 @@ static void fb_api_cb_contacts(fb_http_req_t *req, gpointer data)
         jx = jv->u.array.values[i];
 
         /* Scattered values lead to a gnarly conditional... */
-        if (fb_json_val_chk(jx, "represented_profile", json_object, &jy) &&
+        if (!fb_json_val_chk(jx, "represented_profile", json_object, &jy) ||
 
             /* Check the contact type is "user" */
-            fb_json_val_chk(jy, "__type__", json_object, &jz) &&
-            fb_json_str_chk(jz, "name", &str) &&
-            (g_ascii_strcasecmp(str, "user") == 0) &&
+            !fb_json_val_chk(jy, "__type__", json_object, &jz) ||
+            !fb_json_str_chk(jz, "name", &str) ||
+            (g_ascii_strcasecmp(str, "user") != 0) ||
 
             /* Check the contact is a friend */
-            fb_json_str_chk(jy, "friendship_status", &str) &&
-            (g_ascii_strcasecmp(str, "ARE_FRIENDS") == 0) &&
+            !fb_json_str_chk(jy, "friendship_status", &str) ||
+            (g_ascii_strcasecmp(str, "ARE_FRIENDS") != 0) ||
 
             /* Obtain the contact user identifier */
-            fb_json_str_chk(jy, "id", &uid) &&
-            (g_strcmp0(uid, api->uid) != 0) &&
+            !fb_json_str_chk(jy, "id", &uid) ||
 
             /* Obtain the name of the user */
-            fb_json_val_chk(jx, "structured_name", json_object, &jy) &&
-            fb_json_str_chk(jy, "text", &name))
+            !fb_json_val_chk(jx, "structured_name", json_object, &jy) ||
+            !fb_json_str_chk(jy, "text", &name))
         {
-            user = fb_api_user_new(uid, name);
-            users = g_slist_prepend(users, user);
+            continue;
+        }
+
+        user.uid = FB_ID_FROM_STR(uid);
+
+        if (user.uid != api->uid) {
+            user.name = name;
+            users = g_slist_prepend(users, g_memdup(&user, sizeof user));
         }
     }
 
     FB_API_FUNC(api, contacts, users);
 
 finish:
-    g_slist_free_full(users, (GDestroyNotify) fb_api_user_free);
+    g_slist_free_full(users, g_free);
     json_value_free(json);
 }
 
@@ -932,24 +931,23 @@ void fb_api_disconnect(fb_api_t *api)
  * Sends a message to a user.
  *
  * @param api The #fb_api.
- * @param uid The target user identifier.
+ * @param uid The #fb_id of the user.
  * @param msg The message.
  **/
-void fb_api_message(fb_api_t *api, const gchar *uid, const gchar *msg)
+void fb_api_message(fb_api_t *api, fb_id_t uid, const gchar *msg)
 {
     guint64  msgid;
     gchar   *rmsg;
 
     g_return_if_fail(api != NULL);
-    g_return_if_fail(uid != NULL);
     g_return_if_fail(msg != NULL);
 
     msgid = FB_API_MSGID(g_get_real_time() / 1000, g_random_int());
 
     rmsg = g_strdup_printf("{"
             "\"body\":\"%s\","
-            "\"to\":\"%s\","
-            "\"sender_fbid\":\"%s\","
+            "\"to\":\"%" FB_ID_FORMAT "\","
+            "\"sender_fbid\":\"%" FB_ID_FORMAT "\","
             "\"msgid\":%" G_GUINT64_FORMAT
         "}", msg, uid, api->uid, msgid);
 
@@ -997,154 +995,15 @@ void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...)
  * Sends a typing state to a user.
  *
  * @param api   The #fb_api.
- * @param uid   The target user identifier.
+ * @param uid   The #fb_id.
  * @param state TRUE if the user is typing, otherwise FALSE.
  **/
-void fb_api_typing(fb_api_t *api, const gchar *uid, gboolean state)
+void fb_api_typing(fb_api_t *api, fb_id_t uid, gboolean state)
 {
     g_return_if_fail(api != NULL);
-    g_return_if_fail(uid != NULL);
 
     fb_api_publish(api, "/typing", "{"
-            "\"to\":\"%s\","
+            "\"to\":\"%" FB_ID_FORMAT "\","
             "\"state\":%d"
         "}", uid, state != 0);
-}
-
-/**
- * Creates a new #fb_api_msg. The returned #fb_api_msg should be freed
- * with #fb_api_msg_free() when no longer needed.
- *
- * @param uid  The user identifier.
- * @param text The message text.
- *
- * @return The #fb_api_msg or NULL on error.
- **/
-fb_api_msg_t *fb_api_msg_new(const gchar *uid, const gchar *text)
-{
-    fb_api_msg_t *msg;
-
-    msg = g_new0(fb_api_msg_t, 1);
-    msg->uid  = g_strdup(uid);
-    msg->text = g_strdup(text);
-
-    return msg;
-}
-
-/**
- * Frees all memory used by a #fb_api_msg.
- *
- * @param msg The #fb_api_msg.
- **/
-void fb_api_msg_free(fb_api_msg_t *msg)
-{
-    if (G_UNLIKELY(msg == NULL))
-        return;
-
-    g_free(msg->text);
-    g_free(msg->uid);
-    g_free(msg);
-}
-
-/**
- * Creates a new #fb_api_pres. The returned #fb_api_pres should be
- * freed with #fb_api_pres_free() when no longer needed.
- *
- * @param uid    The user identifier.
- * @param active TRUE if the user is active, otherwise FALSE.
- *
- * @return The #fb_api_pres or NULL on error.
- **/
-fb_api_pres_t *fb_api_pres_new(const gchar *uid, gboolean active)
-{
-    fb_api_pres_t *pres;
-
-    pres = g_new0(fb_api_pres_t, 1);
-    pres->uid    = g_strdup(uid);
-    pres->active = active;
-
-    return pres;
-}
-
-/**
- * Frees all memory used by a #fb_api_pres.
- *
- * @param pres The #fb_api_pres.
- **/
-void fb_api_pres_free(fb_api_pres_t *pres)
-{
-    if (G_UNLIKELY(pres == NULL))
-        return;
-
-    g_free(pres->uid);
-    g_free(pres);
-}
-
-/**
- * Creates a new #fb_api_typing. The returned #fb_api_typing should be
- * freed with #fb_api_typing_free() when no longer needed.
- *
- * @param uid   The user identifier.
- * @param state TRUE if the user is typing, otherwise FALSE.
- *
- * @return The #fb_api_typing or NULL on error.
- **/
-fb_api_typing_t *fb_api_typing_new(const gchar *uid, gboolean state)
-{
-    fb_api_typing_t *typg;
-
-    typg = g_new0(fb_api_typing_t, 1);
-    typg->uid   = g_strdup(uid);
-    typg->state = state;
-
-    return typg;
-}
-
-/**
- * Frees all memory used by a #fb_api_typing.
- *
- * @param typg The #fb_api_typing.
- **/
-void fb_api_typing_free(fb_api_typing_t *typg)
-{
-    if (G_UNLIKELY(typg == NULL))
-        return;
-
-    g_free(typg->uid);
-    g_free(typg);
-}
-
-/**
- * Creates a new #fb_api_user. The returned #fb_api_user should be
- * freed with #fb_api_user_free() when no longer needed.
- *
- * @param uid  The user identifier.
- * @param name The name of the user.
- *
- * @return The #fb_api_user or NULL on error.
- **/
-fb_api_user_t *fb_api_user_new(const gchar *uid, const gchar *name)
-{
-    fb_api_user_t *user;
-
-    user = g_new0(fb_api_user_t, 1);
-    user->uid  = g_strdup(uid);
-    user->name = g_strdup(name);
-
-    return user;
-}
-
-/**
- * Frees all memory used by a #fb_api_user.
- *
- * @param user The #fb_api_user.
- **/
-void fb_api_user_free(fb_api_user_t *user)
-{
-    if (G_UNLIKELY(user == NULL))
-        return;
-
-    g_free(user->name);
-    g_free(user->uid);
-    g_free(user);
 }

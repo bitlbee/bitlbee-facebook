@@ -23,6 +23,7 @@
 #include <bitlbee.h>
 
 #include "facebook-http.h"
+#include "facebook-id.h"
 #include "facebook-json.h"
 #include "facebook-mqtt.h"
 
@@ -187,12 +188,12 @@ struct fb_api
     GError    *err;       /** The #GError or NULL. **/
     GQueue    *msgs;      /** The #GQueue of raw messages. **/
 
-    gchar *uid;           /** The user identifier. **/
-    gchar *token;         /** The session token. **/
-    gchar *stoken;        /** The sync token. **/
-    gchar *cid;           /** The client identifier. **/
-    gchar *mid;           /** The MQTT identifier. **/
-    gchar *cuid;          /** The client unique identifier. **/
+    fb_id_t  uid;        /** The The #fb_id of the user. **/
+    gchar   *token;      /** The session token. **/
+    gchar   *stoken;     /** The sync token. **/
+    gchar   *cid;        /** The client identifier. **/
+    gchar   *mid;        /** The MQTT identifier. **/
+    gchar   *cuid;       /** The client unique identifier. **/
 };
 
 /**
@@ -200,8 +201,8 @@ struct fb_api
  **/
 struct fb_api_msg
 {
-    gchar *uid;  /** The user identifier. **/
-    gchar *text; /** The message text. **/
+    fb_id_t      uid;  /** The #fb_id of the user. **/
+    const gchar *text; /** The message text. **/
 };
 
 /**
@@ -209,8 +210,8 @@ struct fb_api_msg
  **/
 struct fb_api_pres
 {
-    gchar    *uid;    /** The user identifier. **/
-    gboolean  active; /** TRUE if the user is active. **/
+    fb_id_t  uid;    /** The #fb_id of the user. **/
+    gboolean active; /** TRUE if the user is active. **/
 };
 
 /**
@@ -218,8 +219,8 @@ struct fb_api_pres
  **/
 struct fb_api_typing
 {
-    gchar    *uid;   /** The user identifier. **/
-    gboolean  state; /** TRUE if the user is typing. **/
+    fb_id_t  uid;   /** The #fb_id of the user. **/
+    gboolean state; /** TRUE if the user is typing. **/
 };
 
 /**
@@ -227,8 +228,8 @@ struct fb_api_typing
  **/
 struct fb_api_user
 {
-    gchar *uid;  /** The user identifier. **/
-    gchar *name; /** The name of the user. **/
+    fb_id_t      uid;  /** The #fb_id of the user. **/
+    const gchar *name; /** The name of the user. **/
 };
 
 
@@ -252,26 +253,10 @@ void fb_api_connect(fb_api_t *api);
 
 void fb_api_disconnect(fb_api_t *api);
 
-void fb_api_message(fb_api_t *api, const gchar *uid, const gchar *msg);
+void fb_api_message(fb_api_t *api, fb_id_t uid, const gchar *msg);
 
 void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...);
 
-void fb_api_typing(fb_api_t *api, const gchar *uid, gboolean state);
-
-fb_api_msg_t *fb_api_msg_new(const gchar *uid, const gchar *text);
-
-void fb_api_msg_free(fb_api_msg_t *msg);
-
-fb_api_pres_t *fb_api_pres_new(const gchar *uid, gboolean online);
-
-void fb_api_pres_free(fb_api_pres_t *pres);
-
-fb_api_typing_t *fb_api_typing_new(const gchar *uid, gboolean state);
-
-void fb_api_typing_free(fb_api_typing_t *typg);
-
-fb_api_user_t *fb_api_user_new(const gchar *uid, const gchar *name);
-
-void fb_api_user_free(fb_api_user_t *user);
+void fb_api_typing(fb_api_t *api, fb_id_t uid, gboolean state);
 
 #endif /* _FACEBOOK_API_H */
