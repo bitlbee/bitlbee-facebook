@@ -82,6 +82,9 @@ typedef struct fb_api_msg fb_api_msg_t;
 /** The structure for representing an #fb_api presence. **/
 typedef struct fb_api_pres fb_api_pres_t;
 
+/** The structure for representing an #fb_api user typing state. **/
+typedef struct fb_api_typing fb_api_typing_t;
+
 /** The structure for representing an #fb_api user. **/
 typedef struct fb_api_user fb_api_user_t;
 
@@ -159,6 +162,16 @@ struct fb_api_funcs
      * @param data  The user-defined data or NULL.
      **/
     void (*presence) (fb_api_t *api, const GSList *press, gpointer data);
+
+    /**
+     * The typing function. This is called whenever the #fb_api has
+     * retrieved a typing state update.
+     *
+     * @param api  The #fb_api.
+     * @param typg The #fb_api_typing.
+     * @param data The user-defined data or NULL.
+     **/
+    void (*typing) (fb_api_t *api, fb_api_typing_t *typg, gpointer data);
 };
 
 /**
@@ -201,6 +214,15 @@ struct fb_api_pres
 };
 
 /**
+ * The structure for representing an #fb_api user typing state.
+ **/
+struct fb_api_typing
+{
+    gchar    *uid;   /** The user identifier. **/
+    gboolean  state; /** TRUE if the user is typing. **/
+};
+
+/**
  * The structure for representing an #fb_api user.
  **/
 struct fb_api_user
@@ -234,6 +256,8 @@ void fb_api_message(fb_api_t *api, const gchar *uid, const gchar *msg);
 
 void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...);
 
+void fb_api_typing(fb_api_t *api, const gchar *uid, gboolean state);
+
 fb_api_msg_t *fb_api_msg_new(const gchar *uid, const gchar *text);
 
 void fb_api_msg_free(fb_api_msg_t *msg);
@@ -241,6 +265,10 @@ void fb_api_msg_free(fb_api_msg_t *msg);
 fb_api_pres_t *fb_api_pres_new(const gchar *uid, gboolean online);
 
 void fb_api_pres_free(fb_api_pres_t *pres);
+
+fb_api_typing_t *fb_api_typing_new(const gchar *uid, gboolean state);
+
+void fb_api_typing_free(fb_api_typing_t *typg);
 
 fb_api_user_t *fb_api_user_new(const gchar *uid, const gchar *name);
 

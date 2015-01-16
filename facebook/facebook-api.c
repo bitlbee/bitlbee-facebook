@@ -343,6 +343,47 @@ static void fb_api_cb_mqtt_connack(fb_mqtt_t *mqtt, gpointer data)
 }
 
 /**
+ * Handles typing notifications which are to be published to the user.
+ *
+ * @param api   The #fb_api.
+ * @param pload The message payload.
+ **/
+static void fb_api_cb_publish_tn(fb_api_t *api, const GByteArray *pload)
+{
+    json_value      *json;
+    fb_api_typing_t *typg;
+    const gchar     *str;
+    gint64           uid;
+    gint64           state;
+
+    json = fb_api_json_new(api, (gchar*) pload->data, pload->len);
+
+    if (json == NULL)
+        return;
+
+    if (!fb_json_str_chk(json, "type", &str) ||
+        (g_ascii_strcasecmp(str, "typ") != 0))
+    {
+        goto finish;
+    }
+
+    if (!fb_json_int_chk(json, "sender_fbid", &uid) ||
+        !fb_json_int_chk(json, "state", &state))
+    {
+        fb_api_error(api, FB_API_ERROR, "Failed to obtain typing state");
+        goto finish;
+    }
+
+    typg = fb_api_typing_new(NULL, state != 0);
+    typg->uid = g_strdup_printf("%" G_GINT64_FORMAT, uid);
+    FB_API_FUNC(api, typing, typg);
+    fb_api_typing_free(typg);
+
+finish:
+    json_value_free(json);
+}
+
+/**
  * Handles message responses which publish the next message queued.
  *
  * @param api   The #fb_api.
@@ -563,7 +604,10 @@ static void fb_api_cb_mqtt_publish(fb_mqtt_t *mqtt, const gchar *topic,
 
     fb_util_hexdump(bytes, 2, "Reading message:");
 
-    if (g_ascii_strcasecmp(topic, "/send_message_response") == 0)
+
+    if (g_ascii_strcasecmp(topic, "/orca_typing_notifications") == 0)
+        fb_api_cb_publish_tn(api, bytes);
+    else if (g_ascii_strcasecmp(topic, "/send_message_response") == 0)
         fb_api_cb_publish_mr(api, bytes);
     else if (g_ascii_strcasecmp(topic, "/t_ms") == 0)
         fb_api_cb_publish_ms(api, bytes);
@@ -950,6 +994,24 @@ void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...)
 }
 
 /**
+ * Sends a typing state to a user.
+ *
+ * @param api   The #fb_api.
+ * @param uid   The target user identifier.
+ * @param state TRUE if the user is typing, otherwise FALSE.
+ **/
+void fb_api_typing(fb_api_t *api, const gchar *uid, gboolean state)
+{
+    g_return_if_fail(api != NULL);
+    g_return_if_fail(uid != NULL);
+
+    fb_api_publish(api, "/typing", "{"
+            "\"to\":\"%s\","
+            "\"state\":%d"
+        "}", uid, state != 0);
+}
+
+/**
  * Creates a new #fb_api_msg. The returned #fb_api_msg should be freed
  * with #fb_api_msg_free() when no longer needed.
  *
@@ -1016,6 +1078,40 @@ void fb_api_pres_free(fb_api_pres_t *pres)
 
     g_free(pres->uid);
     g_free(pres);
+}
+
+/**
+ * Creates a new #fb_api_typing. The returned #fb_api_typing should be
+ * freed with #fb_api_typing_free() when no longer needed.
+ *
+ * @param uid   The user identifier.
+ * @param state TRUE if the user is typing, otherwise FALSE.
+ *
+ * @return The #fb_api_typing or NULL on error.
+ **/
+fb_api_typing_t *fb_api_typing_new(const gchar *uid, gboolean state)
+{
+    fb_api_typing_t *typg;
+
+    typg = g_new0(fb_api_typing_t, 1);
+    typg->uid   = g_strdup(uid);
+    typg->state = state;
+
+    return typg;
+}
+
+/**
+ * Frees all memory used by a #fb_api_typing.
+ *
+ * @param typg The #fb_api_typing.
+ **/
+void fb_api_typing_free(fb_api_typing_t *typg)
+{
+    if (G_UNLIKELY(typg == NULL))
+        return;
+
+    g_free(typg->uid);
+    g_free(typg);
 }
 
 /**

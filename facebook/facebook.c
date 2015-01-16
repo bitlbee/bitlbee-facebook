@@ -139,6 +139,23 @@ static void fb_cb_api_presence(fb_api_t *api, const GSList *press,
 }
 
 /**
+ * Implemented #fb_api_funcs->typing().
+ *
+ * @param api  The #fb_api.
+ * @param typg The #fb_api_typing.
+ * @param data The user defined data, which is #fb_data.
+ **/
+static void fb_cb_api_typing(fb_api_t *api, fb_api_typing_t *typg,
+                             gpointer data)
+{
+    fb_data_t *fata = data;
+    guint32    flags;
+
+    flags = typg->state ? OPT_TYPING : 0;
+    imcb_buddy_typing(fata->ic, typg->uid, flags);
+}
+
+/**
  * Creates a new #fb_data with an #account. The returned #fb_data
  * should be freed with #fb_data_free() when no longer needed.
  *
@@ -156,7 +173,8 @@ fb_data_t *fb_data_new(account_t *acc)
         .connect  = fb_cb_api_connect,
         .contacts = fb_cb_api_contacts,
         .message  = fb_cb_api_message,
-        .presence = fb_cb_api_presence
+        .presence = fb_cb_api_presence,
+        .typing   = fb_cb_api_typing
     };
 
     g_return_val_if_fail(acc != NULL, NULL);
@@ -290,6 +308,11 @@ static int fb_buddy_msg(struct im_connection *ic, char *to, char *message,
  **/
 static int fb_send_typing(struct im_connection *ic, char *who, int flags)
 {
+    fb_data_t *fata = ic->proto_data;
+    gboolean   state;
+
+    state = (flags & OPT_TYPING) != 0;
+    fb_api_typing(fata->api, who, state);
     return 0;
 }
 
