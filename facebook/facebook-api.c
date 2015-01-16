@@ -46,33 +46,63 @@ GQuark fb_api_error_quark(void)
  * @param api  The #fb_api.
  * @param data The data.
  * @param size The size of the data.
+ * @param json The return location for the json_value.
  *
  * @return TRUE if the data was parsed without error, otherwise FALSE.
  **/
-static json_value *fb_api_json_new(fb_api_t *api, const gchar *data,
-                                   gsize size)
+static gboolean fb_api_json_new(fb_api_t *api, const gchar *data, gsize size,
+                                json_value **json)
 {
-    json_value  *json;
+    json_value  *jv;
     const gchar *msg;
     gint64       code;
 
-    json = fb_json_new(data, size, &api->err);
+    jv = fb_json_new(data, size, &api->err);
 
-    if (api->err != NULL) {
+    if (G_UNLIKELY(api->err != NULL)) {
         fb_api_error(api, 0, NULL);
-        return NULL;
+        return FALSE;
     }
 
-    if (fb_json_int_chk(json, "error_code", &code)) {
-        if (!fb_json_str_chk(json, "error_msg", &msg))
+    if (fb_json_int_chk(jv, "error_code", &code)) {
+        if (!fb_json_str_chk(jv, "error_msg", &msg))
             msg = "Generic Error";
 
         fb_api_error(api, FB_API_ERROR_GENERAL, "%s", msg);
-        json_value_free(json);
-        return NULL;
+        json_value_free(jv);
+        return FALSE;
+    } else if (fb_json_str_chk(jv, "errorCode", &msg)) {
+        fb_api_error(api, FB_API_ERROR_GENERAL, "%s", msg);
+        json_value_free(jv);
+        return FALSE;
     }
 
-    return json;
+    *json = jv;
+    return TRUE;
+}
+
+/**
+ * Checks an #fb_http_req for errors.
+ *
+ * @param api The #fb_api.
+ * @param req The #fb_http_req.
+ *
+ * @return TRUE if no errors were found, otherwise FALSE.
+ **/
+static gboolean fb_api_http_chk(fb_api_t *api, fb_http_req_t *req)
+{
+    if (G_UNLIKELY(api->err != NULL)) {
+        fb_api_error(api, 0, NULL);
+        return FALSE;
+    }
+
+    if (req->err != NULL) {
+        api->err = g_error_copy(req->err);
+        fb_api_error(api, 0, NULL);
+        return FALSE;
+    }
+
+    return TRUE;
 }
 
 /**
@@ -234,10 +264,11 @@ static void fb_api_cb_seqid(fb_http_req_t *req, gpointer data)
     json_value  *jv;
     const gchar *str;
 
-    json = fb_api_json_new(api, req->body, req->body_size);
-
-    if (json == NULL)
+    if (!fb_api_http_chk(api, req) ||
+        !fb_api_json_new(api, req->body, req->body_size, &json))
+    {
         return;
+    }
 
     /* Scattered values lead to a gnarly conditional... */
     if (!fb_json_val_chk(json, "data", json_array, &jv) ||
@@ -356,9 +387,7 @@ static void fb_api_cb_publish_tn(fb_api_t *api, const GByteArray *pload)
     gint64           uid;
     gint64           state;
 
-    json = fb_api_json_new(api, (gchar*) pload->data, pload->len);
-
-    if (json == NULL)
+    if (!fb_api_json_new(api, (gchar*) pload->data, pload->len, &json))
         return;
 
     if (!fb_json_str_chk(json, "type", &str) ||
@@ -394,9 +423,7 @@ static void fb_api_cb_publish_mr(fb_api_t *api, const GByteArray *pload)
     gchar      *msg;
     gboolean    res;
 
-    json = fb_api_json_new(api, (gchar*) pload->data, pload->len);
-
-    if (json == NULL)
+    if (!fb_api_json_new(api, (gchar*) pload->data, pload->len, &json))
         return;
 
     if (!fb_json_bool_chk(json, "succeeded", &res) || !res) {
@@ -436,11 +463,10 @@ static void fb_api_cb_publish_ms(fb_api_t *api, const GByteArray *pload)
     guint         i;
 
     /* Start at 1 to skip the NULL byte */
-    json = fb_api_json_new(api, (gchar*) pload->data + 1, pload->len - 1);
-    msgs = NULL;
-
-    if (json == NULL)
+    if (!fb_api_json_new(api, (gchar*) pload->data + 1, pload->len - 1, &json))
         return;
+
+    msgs = NULL;
 
     if (fb_json_str_chk(json, "syncToken", &str)) {
         g_free(api->stoken);
@@ -749,10 +775,11 @@ static void fb_api_cb_auth(fb_http_req_t *req, gpointer data)
     const gchar *str;
     gint64       in;
 
-    json = fb_api_json_new(api, req->body, req->body_size);
-
-    if (json == NULL)
+    if (!fb_api_http_chk(api, req) ||
+        !fb_api_json_new(api, req->body, req->body_size, &json))
+    {
         return;
+    }
 
     if (!fb_json_int_chk(json, "uid", &in) ||
         !fb_json_str_chk(json, "access_token", &str))
@@ -820,11 +847,13 @@ static void fb_api_cb_contacts(fb_http_req_t *req, gpointer data)
     const gchar   *name;
     guint          i;
 
-    json  = fb_api_json_new(api, req->body, req->body_size);
-    users = NULL;
-
-    if (json == NULL)
+    if (!fb_api_http_chk(api, req) ||
+        !fb_api_json_new(api, req->body, req->body_size, &json))
+    {
         return;
+    }
+
+    users = NULL;
 
     if (!fb_json_val_chk(json, "viewer",             json_object, &jv) ||
         !fb_json_val_chk(jv,   "messenger_contacts", json_object, &jv) ||
