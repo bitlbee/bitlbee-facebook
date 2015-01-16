@@ -196,6 +196,24 @@ static void fb_api_req_send(fb_api_t *api, fb_http_req_t *req)
 }
 
 /**
+ * Implemented #fb_http_func for simple boolean error checking.
+ *
+ * @param req  The #fb_http_req.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_http_bool(fb_http_req_t *req, gpointer data)
+{
+    fb_api_t *api = data;
+
+    if (!fb_api_http_chk(api, req))
+        return;
+
+    if (bool2int(req->body) == 0)
+        fb_api_error(api, FB_API_ERROR, "Failed generic API operation");
+}
+
+
+/**
  * Implements #fb_mqtt_funcs->error().
  *
  * @param mqtt The #fb_mqtt.
@@ -490,6 +508,13 @@ static void fb_api_cb_publish_ms(fb_api_t *api, const GByteArray *pload)
         }
 
         msg.uid = in;
+        msg.tid = 0;
+
+        if (fb_json_val_chk(jz, "threadKey", json_object, &jz) &&
+            fb_json_int_chk(jz, "threadFbId", &in))
+        {
+            msg.tid = in;
+        }
 
         if (fb_json_str_chk(jy, "body", &str)) {
             msg.text = str;
@@ -959,26 +984,30 @@ void fb_api_disconnect(fb_api_t *api)
 /**
  * Sends a message to a user.
  *
- * @param api The #fb_api.
- * @param uid The #fb_id of the user.
- * @param msg The message.
+ * @param api    The #fb_api.
+ * @param id     The #fb_id of the user.
+ * @param thread TRUE to send to a thread identifier, otherwise FALSE.
+ * @param msg    The message.
  **/
-void fb_api_message(fb_api_t *api, fb_id_t uid, const gchar *msg)
+void fb_api_message(fb_api_t *api, fb_id_t id, gboolean thread,
+                    const gchar *msg)
 {
-    guint64  msgid;
-    gchar   *rmsg;
+    guint64      msgid;
+    const gchar *tpfx;
+    gchar       *rmsg;
 
     g_return_if_fail(api != NULL);
     g_return_if_fail(msg != NULL);
 
     msgid = FB_API_MSGID(g_get_real_time() / 1000, g_random_int());
+    tpfx  = thread ? "tfbid_" : "";
 
     rmsg = g_strdup_printf("{"
             "\"body\":\"%s\","
-            "\"to\":\"%" FB_ID_FORMAT "\","
+            "\"to\":\"%s%" FB_ID_FORMAT "\","
             "\"sender_fbid\":\"%" FB_ID_FORMAT "\","
             "\"msgid\":%" G_GUINT64_FORMAT
-        "}", msg, uid, api->uid, msgid);
+        "}", msg, tpfx, id, api->uid, msgid);
 
     if (g_queue_is_empty(api->msgs))
         fb_api_publish(api, "/send_message2", rmsg, NULL);
@@ -1018,6 +1047,404 @@ void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...)
 
     g_byte_array_free(cytes, TRUE);
     g_byte_array_free(bytes, TRUE);
+}
+
+/**
+ * Implemented #fb_http_func for #fb_api_thread_create().
+ *
+ * @param req  The #fb_http_req.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_thread_create(fb_http_req_t *req, gpointer data)
+{
+    fb_api_t    *api = data;
+    json_value  *json;
+    const gchar *str;
+    fb_id_t      tid;
+
+    if (!fb_api_http_chk(api, req) ||
+        !fb_api_json_new(api, req->body, req->body_size, &json))
+    {
+        return;
+    }
+
+    if (!fb_json_str_chk(json, "thread_fbid", &str)) {
+        fb_api_error(api, FB_API_ERROR, "Failed to create thread");
+        goto finish;
+    }
+
+    tid = FB_ID_FROM_STR(str);
+    FB_API_FUNC(api, thread_create, tid);
+
+finish:
+    json_value_free(json);
+}
+
+/**
+ * Sends a thread creation request.
+ *
+ * @param api  The #fb_api.
+ * @param uids The #GSList of #fb_id.
+ **/
+void fb_api_thread_create(fb_api_t *api, GSList *uids)
+{
+    fb_http_req_t *req;
+    const GSList  *l;
+    GString       *to;
+    fb_id_t       *uid;
+
+    g_return_if_fail(api  != NULL);
+    g_return_if_fail(uids != NULL);
+    g_warn_if_fail(g_slist_length(uids) < 2);
+
+    req = fb_api_req_new(api, FB_API_GHOST, FB_API_PATH_THRDS,
+                         fb_api_cb_thread_create,
+                         "ccom.facebook.orca.send.service.l",
+                         "createThread",
+                         "POST");
+
+    to   = g_string_new(NULL);
+    uids = g_slist_prepend(uids, &api->uid);
+
+    for (l = uids; l != NULL; l = l->next) {
+        uid = l->data;
+
+        if (to->len > 0)
+            g_string_append_c(to, ',');
+
+        g_string_append_printf(to, "{"
+                "\"type\":\"id\","
+                "\"id\":\"%" FB_ID_FORMAT "\""
+            "}", *uid);
+    }
+
+    /* Pop the #fb_api->uid off */
+    uids = g_slist_delete_link(uids, uids);
+    g_string_prepend_c(to, '[');
+    g_string_append_c(to, ']');
+
+    fb_http_req_params_set(req,
+        FB_HTTP_PAIR("to", to->str),
+        NULL
+    );
+
+    fb_api_req_send(api, req);
+    g_string_free(to, TRUE);
+}
+
+/**
+ * Implemented #fb_http_func for #fb_api_thread().
+ *
+ * @param req  The #fb_http_req.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_thread_info(fb_http_req_t *req, gpointer data)
+{
+    fb_api_t        *api = data;
+    fb_api_thread_t  thrd;
+    fb_api_user_t    user;
+    json_value      *json;
+    json_value      *jv;
+    json_value      *jx;
+    gpointer         mptr;
+    const gchar     *str;
+    guint            i;
+
+    if (!fb_api_http_chk(api, req) ||
+        !fb_api_json_new(api, req->body, req->body_size, &json))
+    {
+        return;
+    }
+
+    /* Scattered values lead to a gnarly conditional... */
+    if (!fb_json_val_chk(json, "data", json_array, &jv) ||
+
+        /* Obtain the first array element */
+        (jv->u.array.length != 1) ||
+        ((jv = jv->u.array.values[0]) == NULL) ||
+
+        /* Check the name */
+        !fb_json_str_chk(jv, "name", &str) ||
+        (g_ascii_strcasecmp(str, "threads") != 0) ||
+
+        /* Obtain result array */
+        !fb_json_val_chk(jv, "fql_result_set", json_array, &jv) ||
+        (jv->u.array.length != 1) ||
+        ((jv = jv->u.array.values[0]) == NULL) ||
+
+        /* Obtain the thread identifier */
+        !fb_json_str_chk(jv, "thread_fbid", &str))
+    {
+        fb_api_error(api, FB_API_ERROR, "Failed to fetch thread info");
+        goto finish;
+    }
+
+    thrd.tid   = FB_ID_FROM_STR(str);
+    thrd.topic = NULL;
+    thrd.users = NULL;
+
+    if (fb_json_str_chk(jv, "name", &str) && (strlen(str) > 0))
+        thrd.topic = str;
+
+    if (fb_json_val_chk(jv, "participants", json_array, &jv)) {
+        for (i = 0; i < jv->u.array.length; i++) {
+            jx = jv->u.array.values[i];
+
+            if (!fb_json_str_chk(jx, "user_id", &str))
+                continue;
+
+            user.uid = FB_ID_FROM_STR(str);
+
+            if (fb_json_str_chk(jx, "name", &str) && (user.uid != api->uid)) {
+                user.name = str;
+                mptr = g_memdup(&user, sizeof user);
+                thrd.users = g_slist_prepend(thrd.users, mptr);
+            }
+        }
+    }
+
+    FB_API_FUNC(api, thread_info, &thrd);
+    g_slist_free_full(thrd.users, g_free);
+
+finish:
+    json_value_free(json);
+}
+
+/**
+ * Sends a thread info request.
+ *
+ * @param api The #fb_api.
+ * @param tid The thread #fb_id.
+ **/
+void fb_api_thread_info(fb_api_t *api, fb_id_t tid)
+{
+    fb_http_req_t *req;
+    gchar         *query;
+
+    g_return_if_fail(api != NULL);
+
+    req = fb_api_req_new(api, FB_API_GHOST, FB_API_PATH_FQL,
+                         fb_api_cb_thread_info,
+                         "com.facebook.orca.protocol.methods.u",
+                         "fetchThreadList",
+                         "GET");
+
+    query = g_strdup_printf("{"
+        "\"threads\":\""
+            "SELECT thread_fbid, participants, name "
+                "FROM unified_thread "
+                "WHERE thread_fbid='%" FB_ID_FORMAT "' "
+                "LIMIT 1\""
+        "}", tid);
+
+    fb_http_req_params_set(req, FB_HTTP_PAIR("q", query), NULL);
+    fb_api_req_send(api, req);
+    g_free(query);
+}
+
+/**
+ * Sends a thread invite request.
+ *
+ * @param api The #fb_api.
+ * @param tid The thread #fb_id.
+ * @param uid The user #fb_id.
+ **/
+void fb_api_thread_invite(fb_api_t *api, fb_id_t tid, fb_id_t uid)
+{
+    fb_http_req_t *req;
+    gchar         *stid;
+    gchar         *to;
+
+    g_return_if_fail(api != NULL);
+
+    req = fb_api_req_new(api, FB_API_GHOST, FB_API_PATH_PARTS,
+                         fb_api_cb_http_bool,
+                         "com.facebook.orca.protocol.a",
+                         "addMembers",
+                         "POST");
+
+    stid = g_strdup_printf("t_id.%" FB_ID_FORMAT, tid);
+    to   = g_strdup_printf("[{"
+            "\"type\":\"id\","
+            "\"id\":\"%" FB_ID_FORMAT "\""
+        "}]", uid);
+
+    fb_http_req_params_set(req,
+        FB_HTTP_PAIR("id", stid),
+        FB_HTTP_PAIR("to", to),
+        NULL
+    );
+
+    fb_api_req_send(api, req);
+    g_free(stid);
+    g_free(to);
+}
+
+/**
+ * Frees all memory used by a #fb_api_thread.
+ *
+ * @param thrd The #fb_api_thread.
+ **/
+static void fb_api_cb_threads_free(fb_api_thread_t *thrd)
+{
+    g_slist_free_full(thrd->users, g_free);
+    g_free(thrd);
+}
+
+/**
+ * Implemented #fb_http_func for #fb_api_threads().
+ *
+ * @param req  The #fb_http_req.
+ * @param data The user-defined data, which is #fb_api.
+ **/
+static void fb_api_cb_thread_list(fb_http_req_t *req, gpointer data)
+{
+    fb_api_t        *api = data;
+    fb_api_thread_t  thrd;
+    fb_api_user_t    user;
+    GSList          *thrds;
+    json_value      *json;
+    json_value      *jv;
+    json_value      *jx;
+    json_value      *jy;
+    gpointer         mptr;
+    const gchar     *str;
+    guint            i;
+    guint            j;
+
+    if (!fb_api_http_chk(api, req) ||
+        !fb_api_json_new(api, req->body, req->body_size, &json))
+    {
+        return;
+    }
+
+    thrds = NULL;
+
+    /* Scattered values lead to a gnarly conditional... */
+    if (!fb_json_val_chk(json, "data", json_array, &jv) ||
+
+        /* Obtain the first array element */
+        (jv->u.array.length != 1) ||
+        ((jv = jv->u.array.values[0]) == NULL) ||
+
+        /* Check the name */
+        !fb_json_str_chk(jv, "name", &str) ||
+        (g_ascii_strcasecmp(str, "threads") != 0) ||
+
+        /* Obtain result array */
+        !fb_json_val_chk(jv, "fql_result_set", json_array, &jv))
+    {
+        fb_api_error(api, FB_API_ERROR, "Failed to fetch thread list");
+        goto finish;
+    }
+
+    for (i = 0; i < jv->u.array.length; i++) {
+        jx = jv->u.array.values[i];
+
+        if (!fb_json_str_chk(jx, "thread_fbid", &str))
+            continue;
+
+        thrd.tid   = FB_ID_FROM_STR(str);
+        thrd.topic = NULL;
+        thrd.users = NULL;
+
+        if (fb_json_str_chk(jx, "name", &str) && (strlen(str) > 0))
+            thrd.topic = str;
+
+        if (!fb_json_val_chk(jx, "participants", json_array, &jx)) {
+            thrds = g_slist_prepend(thrds, g_memdup(&thrd, sizeof thrd));
+            continue;
+        }
+
+        for (j = 0; j < jx->u.array.length; j++) {
+            jy = jx->u.array.values[j];
+
+            if (!fb_json_str_chk(jy, "user_id", &str))
+                continue;
+
+            user.uid = FB_ID_FROM_STR(str);
+
+            if (fb_json_str_chk(jy, "name", &str) && (user.uid != api->uid)) {
+                user.name = str;
+                mptr = g_memdup(&user, sizeof user);
+                thrd.users = g_slist_prepend(thrd.users, mptr);
+            }
+        }
+
+        thrds = g_slist_prepend(thrds, g_memdup(&thrd, sizeof thrd));
+    }
+
+    thrds = g_slist_reverse(thrds);
+    FB_API_FUNC(api, thread_list, thrds);
+
+finish:
+    g_slist_free_full(thrds, (GDestroyNotify) fb_api_cb_threads_free);
+    json_value_free(json);
+}
+
+/**
+ * Sends a thread list request.
+ *
+ * @param api   The #fb_api.
+ * @param limit The thread count limit.
+ **/
+void fb_api_thread_list(fb_api_t *api, guint limit)
+{
+    fb_http_req_t *req;
+    gchar         *query;
+
+    g_return_if_fail(api != NULL);
+
+    req = fb_api_req_new(api, FB_API_GHOST, FB_API_PATH_FQL,
+                         fb_api_cb_thread_list,
+                         "com.facebook.orca.protocol.methods.u",
+                         "fetchThreadList",
+                         "GET");
+
+    query = g_strdup_printf("{"
+        "\"threads\":\""
+            "SELECT thread_fbid, participants, name "
+                "FROM unified_thread "
+                "WHERE folder='inbox' "
+                "ORDER BY timestamp DESC "
+                "LIMIT %u\""
+        "}", limit);
+
+    fb_http_req_params_set(req, FB_HTTP_PAIR("q", query), NULL);
+    fb_api_req_send(api, req);
+    g_free(query);
+}
+
+/**
+ * Sends a thread topic request.
+ *
+ * @param api   The #fb_api.
+ * @param tid   The thread #fb_id.
+ * @param topic The topic message.
+ **/
+void fb_api_thread_topic(fb_api_t *api, fb_id_t tid, const gchar *topic)
+{
+    fb_http_req_t *req;
+    gchar         *stid;
+
+    g_return_if_fail(api != NULL);
+
+    req = fb_api_req_new(api, FB_API_HOST, FB_API_PATH_TOPIC,
+                         fb_api_cb_http_bool,
+                         "com.facebook.orca.protocol.a",
+                         "setThreadName",
+                         "messaging.setthreadname");
+
+    stid = g_strdup_printf("t_id.%" FB_ID_FORMAT, tid);
+
+    fb_http_req_params_set(req,
+        FB_HTTP_PAIR("tid",  stid),
+        FB_HTTP_PAIR("name", topic),
+        NULL
+    );
+
+    fb_api_req_send(api, req);
+    g_free(stid);
 }
 
 /**

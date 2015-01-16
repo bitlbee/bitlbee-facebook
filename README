@@ -40,6 +40,20 @@ Usage:
     > account add facebook <username> <password>
     > account <acc> on
 
+  Group Chats (existing chat):
+    > fbchats <acc>
+    > fbjoin <acc> <index> <channel>
+    > /join #<channel>
+    > /topic <message>
+    > /invite <user>
+
+  Group Chats (creating chat):
+    > fbcreate <acc> <user,user,...>
+    > fbjoin <acc> 1 <channel>
+    > /join #<channel>
+    > /topic <message>
+    > /invite <user>
+
 Debugging:
   Before debugging can begin, the plugin must be compiled with debugging
   support. Once debugging support has been enabled, one of the two

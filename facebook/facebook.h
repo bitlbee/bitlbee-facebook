@@ -35,7 +35,9 @@ typedef struct fb_data fb_data_t;
 struct fb_data
 {
     struct im_connection *ic; /** The #im_connection. **/
-    fb_api_t  *api;           /** The #fb_api. **/
+    fb_api_t *api;            /** The #fb_api. **/
+    GSList   *gcs;            /** The #GSList of #groupchats. **/
+    GSList   *tids;           /** The #GSList of thread identifiers. **/
 };
 
 

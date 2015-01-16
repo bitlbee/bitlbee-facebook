@@ -106,15 +106,27 @@ static void fb_cb_api_contacts(fb_api_t *api, const GSList *users,
  **/
 static void fb_cb_api_message(fb_api_t *api, const GSList *msgs, gpointer data)
 {
-    fb_data_t    *fata = data;
-    fb_api_msg_t *msg;
-    const GSList *l;
-    gchar         uid[FB_ID_STRMAX];
+    fb_data_t        *fata = data;
+    fb_api_msg_t     *msg;
+    struct groupchat *gc;
+    const GSList     *l;
+    gchar             uid[FB_ID_STRMAX];
+    gchar             tid[FB_ID_STRMAX];
 
     for (l = msgs; l != NULL; l = l->next) {
         msg = l->data;
         FB_ID_TO_STR(msg->uid, uid);
-        imcb_buddy_msg(fata->ic, uid, (gchar*) msg->text, 0, 0);
+
+        if (msg->tid == 0) {
+            imcb_buddy_msg(fata->ic, uid, (gchar*) msg->text, 0, 0);
+            continue;
+        }
+
+        FB_ID_TO_STR(msg->tid, tid);
+        gc = bee_chat_by_title(fata->ic->bee, fata->ic, tid);
+
+        if (gc != NULL)
+            imcb_chat_msg(gc, uid, (gchar*) msg->text, 0, 0);
     }
 }
 
@@ -144,6 +156,160 @@ static void fb_cb_api_presence(fb_api_t *api, const GSList *press,
         FB_ID_TO_STR(pres->uid, uid);
         imcb_buddy_status(fata->ic, uid, flags, NULL, NULL);
     }
+}
+
+/**
+ * Implemented #fb_api_funcs->thread_create().
+ *
+ * @param api  The #fb_api.
+ * @param tid  The thread #fb_id.
+ * @param data The user defined data, which is #fb_data.
+ **/
+static void fb_cb_api_thread_create(fb_api_t *api, fb_id_t tid, gpointer data)
+{
+    fb_data_t *fata = data;
+    account_t *acc  = fata->ic->acc;
+
+    fata->tids = g_slist_prepend(fata->tids, g_memdup(&tid, sizeof tid));
+    imcb_log(fata->ic, "Created chat thread %" FB_ID_FORMAT, tid);
+    imcb_log(fata->ic, "Join: fbjoin %s %d <channel-name>", acc->tag, 1);
+}
+
+/**
+ * Implemented #fb_api_funcs->thread_info().
+ *
+ * @param api  The #fb_api.
+ * @param thrd The #fb_api_thread.
+ * @param data The user defined data, which is #fb_data.
+ **/
+static void fb_cb_api_thread_info(fb_api_t *api, fb_api_thread_t *thrd,
+                                  gpointer data)
+{
+    fb_data_t        *fata = data;
+    fb_api_user_t    *user;
+    bee_user_t       *bu;
+    struct groupchat *gc;
+    GSList           *l;
+    GString          *gstr;
+    gchar             id[FB_ID_STRMAX];
+
+    FB_ID_TO_STR(thrd->tid, id);
+    gc = bee_chat_by_title(fata->ic->bee, fata->ic, id);
+
+    if (G_UNLIKELY(gc == NULL))
+        return;
+
+    if (thrd->topic == NULL) {
+        gstr = g_string_new(NULL);
+
+        for (l = thrd->users; l != NULL; l = l->next) {
+            user = l->data;
+
+            if (gstr->len > 0)
+                g_string_append(gstr, ", ");
+
+            g_string_append(gstr, user->name);
+        }
+
+        imcb_chat_topic(gc, NULL, gstr->str, 0);
+        g_string_free(gstr, TRUE);
+    } else {
+        imcb_chat_topic(gc, NULL, (gchar*) thrd->topic, 0);
+    }
+
+    for (l = thrd->users; l != NULL; l = l->next) {
+        user = l->data;
+        FB_ID_TO_STR(user->uid, id);
+        bu = bee_user_by_handle(fata->ic->bee, fata->ic, id);
+
+        imcb_chat_add_buddy(gc, id);
+
+        if (bu == NULL) {
+            imcb_buddy_nick_hint(fata->ic, id, user->name);
+            imcb_rename_buddy(fata->ic, id, user->name);
+        }
+    }
+}
+
+/**
+ * Implemented #fb_api_funcs->thread_list().
+ *
+ * @param api   The #fb_api.
+ * @param thrds The #GSList of #fb_api_thread.
+ * @param data  The user defined data, which is #fb_data.
+ **/
+static void fb_cb_api_thread_list(fb_api_t *api, const GSList *thrds,
+                                  gpointer data)
+{
+    fb_data_t       *fata = data;
+    fb_api_thread_t *thrd;
+    fb_api_user_t   *user;
+    GSList          *phrds;
+    const GSList    *l;
+    const GSList    *m;
+    GString         *ln;
+    gpointer         mptr;
+    guint            i;
+    guint            j;
+
+    g_slist_free_full(fata->tids, g_free);
+    fata->tids = NULL;
+    phrds = NULL;
+
+    for (l = thrds, i = 0; (l != NULL) && (i < 25); l = l->next, i++) {
+        thrd = l->data;
+
+        if (g_slist_length(thrd->users) >= 2)
+            phrds = g_slist_prepend(phrds, thrd);
+    }
+
+    if (phrds == NULL) {
+        imcb_log(fata->ic, "No chats to display.");
+        return;
+    }
+
+    ln = g_string_new(NULL);
+    imcb_log(fata->ic, "%2s  %-20s  %s", "ID", "Topic", "Participants");
+    phrds = g_slist_reverse(phrds);
+
+    for (l = phrds, i = 1; l != NULL; l = l->next, i++) {
+        thrd = l->data;
+
+        if (g_slist_length(thrd->users) < 2)
+            continue;
+
+        mptr = g_memdup(&thrd->tid, sizeof thrd->tid);
+        fata->tids = g_slist_prepend(fata->tids, mptr);
+
+        g_string_printf(ln, "%2d", i);
+
+        if (thrd->topic != NULL) {
+            if (strlen(thrd->topic) > 20) {
+                for (j = 16; g_ascii_isspace(thrd->topic[j]) && (j > 0); j--);
+                g_string_append_printf(ln, "  %-.*s...", ++j, thrd->topic);
+                g_string_append_printf(ln, "%*s", 17 - j, "");
+            } else {
+                g_string_append_printf(ln, "  %-20s", thrd->topic);
+            }
+        } else {
+            g_string_append_printf(ln, "  %20s", "");
+        }
+
+        for (m = thrd->users, j = 0; (m != NULL) && (j < 3); m = m->next, j++) {
+            user = m->data;
+            g_string_append(ln, (j != 0) ? ", " : "  ");
+            g_string_append(ln, user->name);
+        }
+
+        if (m != NULL)
+            g_string_append(ln, "...");
+
+        imcb_log(fata->ic, "%s", ln->str);
+    }
+
+    fata->tids = g_slist_reverse(fata->tids);
+    g_string_free(ln, TRUE);
+    g_slist_free(phrds);
 }
 
 /**
@@ -179,13 +345,16 @@ fb_data_t *fb_data_new(account_t *acc)
     gchar     *uid;
 
     static const fb_api_funcs_t funcs = {
-        .error    = fb_cb_api_error,
-        .auth     = fb_cb_api_auth,
-        .connect  = fb_cb_api_connect,
-        .contacts = fb_cb_api_contacts,
-        .message  = fb_cb_api_message,
-        .presence = fb_cb_api_presence,
-        .typing   = fb_cb_api_typing
+        .error         = fb_cb_api_error,
+        .auth          = fb_cb_api_auth,
+        .connect       = fb_cb_api_connect,
+        .contacts      = fb_cb_api_contacts,
+        .message       = fb_cb_api_message,
+        .presence      = fb_cb_api_presence,
+        .thread_create = fb_cb_api_thread_create,
+        .thread_info   = fb_cb_api_thread_info,
+        .thread_list   = fb_cb_api_thread_list,
+        .typing        = fb_cb_api_typing
     };
 
     g_return_val_if_fail(acc != NULL, NULL);
@@ -227,6 +396,8 @@ void fb_data_free(fb_data_t *fata)
         return;
 
     fb_api_free(fata->api);
+    g_slist_free_full(fata->tids, g_free);
+    g_slist_free_full(fata->gcs,  (GDestroyNotify) imcb_chat_free);
     g_free(fata);
 }
 
@@ -310,7 +481,7 @@ static int fb_buddy_msg(struct im_connection *ic, char *to, char *message,
     fb_id_t    uid;
 
     uid = FB_ID_FROM_STR(to);
-    fb_api_message(fata->api, uid, message);
+    fb_api_message(fata->api, uid, FALSE, message);
     return 0;
 }
 
@@ -415,6 +586,97 @@ static void fb_get_info(struct im_connection *ic, char *who)
 }
 
 /**
+ * Implements #prpl->chat_invite(). This invites a user to a #groupchat.
+ *
+ * @param gc      The #groupchat.
+ * @param who     Ignored.
+ * @param message The handle to invite.
+ **/
+void fb_chat_invite(struct groupchat *gc, char *who, char *message)
+{
+    fb_data_t *fata = gc->ic->proto_data;
+    fb_id_t    tid;
+    fb_id_t    uid;
+
+    tid = FB_ID_FROM_STR(gc->title);
+    uid = FB_ID_FROM_STR(who);
+    fb_api_thread_invite(fata->api, tid, uid);
+    imcb_chat_add_buddy(gc, who);
+}
+
+/**
+ * Implements #prpl->chat_leave(). This leaves a #groupchat.
+ *
+ * @param gc The #groupchat.
+ **/
+void fb_chat_leave(struct groupchat *gc)
+{
+    fb_data_t *fata = gc->ic->proto_data;
+
+    fata->gcs = g_slist_remove(fata->gcs, gc);
+    imcb_chat_free(gc);
+}
+
+/**
+ * Implements #prpl->chat_msg(). This sends a message to a #groupchat.
+ *
+ * @param gc      The #groupchat.
+ * @param message The message to send.
+ * @param flags   Ignored.
+ **/
+void fb_chat_msg(struct groupchat *gc, char *message, int flags)
+{
+    fb_data_t *fata = gc->ic->proto_data;
+    fb_id_t    tid;
+
+    tid = FB_ID_FROM_STR(gc->title);
+    fb_api_message(fata->api, tid, TRUE, message);
+}
+
+/**
+ * Implements #prpl->chat_join(). This joins a #groupchat.
+ *
+ * @param ic       The #im_connection.
+ * @param room     The room name.
+ * @param nick     The nick name.
+ * @param password The password.
+ * @param sets     The #set array.
+ **/
+struct groupchat *fb_chat_join(struct im_connection *ic, const char *room,
+                               const char *nick, const char *password,
+                               set_t **sets)
+{
+    fb_data_t        *fata = ic->proto_data;
+    fb_id_t           tid;
+    struct groupchat *gc;
+
+    gc = imcb_chat_new(ic, room);
+    fata->gcs = g_slist_prepend(fata->gcs, gc);
+    imcb_chat_add_buddy(gc, ic->acc->user);
+
+    tid = FB_ID_FROM_STR(room);
+    fb_api_thread_info(fata->api, tid);
+
+    return gc;
+}
+
+/**
+ * Implements #prpl->chat_topic(). This sets a #groupchat topic.
+ *
+ * @param gc    The #groupchat.
+ * @param topic The topic
+ **/
+void fb_chat_topic(struct groupchat *gc, char *topic)
+{
+    fb_data_t *fata = gc->ic->proto_data;
+    fb_id_t    tid;
+
+    tid = FB_ID_FROM_STR(gc->title);
+    fb_api_thread_topic(fata->api, tid, topic);
+    imcb_chat_topic(gc, NULL, topic, 0);
+}
+
+/**
  * Implements #prpl->auth_allow(). This accepts buddy requests.
  *
  * @param ic  The #im_connection.
@@ -457,6 +719,126 @@ static void fb_buddy_data_free(struct bee_user *bu)
 }
 
 /**
+ * Obtains a #account from command arguments.
+ *
+ * @param irc  The #irc.
+ * @param args The command arguments.
+ **/
+static account_t *fb_cmd_account(irc_t *irc, char **args)
+{
+    account_t *acc;
+
+    acc = account_get(irc->b, args[1]);
+
+    if (acc == NULL) {
+        irc_rootmsg(irc, "Unknown account: %s", args[1]);
+        return NULL;
+    }
+
+    if (g_ascii_strcasecmp(acc->prpl->name, "facebook") != 0) {
+        irc_rootmsg(irc, "Unknown Facebook account: %s", acc->tag);
+        return NULL;
+    }
+
+    return acc;
+}
+
+/**
+ * Implemented #root_command_add() callback for the 'fbchats' command.
+ *
+ * @param irc  The #irc.
+ * @param args The command arguments.
+ **/
+static void fb_cmd_fbchats(irc_t *irc, char **args)
+{
+    account_t *acc;
+    fb_data_t *fata;
+
+    acc = fb_cmd_account(irc, args);
+
+    if (acc == NULL)
+        return;
+
+    fata = acc->ic->proto_data;
+    fb_api_thread_list(fata->api, 25);
+}
+
+/**
+ * Implemented #root_command_add() callback for the 'fbcreate' command.
+ *
+ * @param irc  The #irc.
+ * @param args The command arguments.
+ **/
+static void fb_cmd_fbcreate(irc_t *irc, char **args)
+{
+    account_t  *acc;
+    fb_data_t  *fata;
+    fb_id_t     uid;
+    irc_user_t *iu;
+    GSList     *uids;
+    guint       i;
+
+    acc  = fb_cmd_account(irc, args);
+    uids = NULL;
+
+    if (acc == NULL)
+        return;
+
+    fata = acc->ic->proto_data;
+
+    for (i = 2; args[i] != NULL; i++) {
+        iu = irc_user_by_name(irc, args[i]);
+
+        if (iu != NULL) {
+            uid = FB_ID_FROM_STR(iu->bu->handle);
+            uids = g_slist_prepend(uids, g_memdup(&uid, sizeof uid));
+        }
+    }
+
+    if (uids == NULL) {
+        imcb_error(fata->ic, "No valid users specified");
+        return;
+    }
+
+    fb_api_thread_create(fata->api, uids);
+    g_slist_free_full(uids, g_free);
+}
+
+/**
+ * Implemented #root_command_add() callback for the 'fbjoin' command.
+ *
+ * @param irc  The #irc.
+ * @param args The command arguments.
+ **/
+static void fb_cmd_fbjoin(irc_t *irc, char **args)
+{
+    account_t *acc;
+    fb_data_t *fata;
+    fb_id_t   *tid;
+    gint64     indx;
+    gchar      stid[FB_ID_STRMAX];
+
+    acc = fb_cmd_account(irc, args);
+
+    if (acc == NULL)
+        return;
+
+    fata = acc->ic->proto_data;
+    indx = g_ascii_strtoll(args[2], NULL, 10);
+    tid  = g_slist_nth_data(fata->tids, indx - 1);
+
+    if ((indx < 1) || (tid == NULL)) {
+        imcb_error(fata->ic, "Invalid index: %" G_GINT64_FORMAT, indx);
+        return;
+    }
+
+    FB_ID_TO_STR(*tid, stid);
+
+    gchar *cmd[] = {"chat", "add", acc->tag, stid, args[3], NULL};
+    root_command(irc, cmd);
+}
+
+/**
  * Implements the #init_plugin() function. BitlBee looks for this
  * function and executes it to register the protocol and its related
  * callbacks.
@@ -481,6 +863,11 @@ void init_plugin()
     pp->rem_permit      = fb_rem_permit;
     pp->rem_deny        = fb_rem_deny;
     pp->get_info        = fb_get_info;
+    pp->chat_invite     = fb_chat_invite;
+    pp->chat_leave      = fb_chat_leave;
+    pp->chat_msg        = fb_chat_msg;
+    pp->chat_join       = fb_chat_join;
+    pp->chat_topic      = fb_chat_topic;
     pp->handle_cmp      = g_ascii_strcasecmp;
     pp->auth_allow      = fb_auth_allow;
     pp->auth_deny       = fb_auth_deny;
@@ -488,4 +875,8 @@ void init_plugin()
     pp->buddy_data_free = fb_buddy_data_free;
 
     register_protocol(pp);
+
+    root_command_add("fbchats",  1, fb_cmd_fbchats,  0);
+    root_command_add("fbcreate", 3, fb_cmd_fbcreate, 0);
+    root_command_add("fbjoin",   3, fb_cmd_fbjoin,   0);
 }

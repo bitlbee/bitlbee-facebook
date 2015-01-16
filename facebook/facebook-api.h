@@ -34,9 +34,12 @@
 #define FB_API_KEY    "256002347743983"
 #define FB_API_SECRET "374e60f8b9bb6b8cbb30f78030438895"
 
-#define FB_API_PATH_AUTH "/method/auth.login"
-#define FB_API_PATH_FQL  "/fql"
-#define FB_API_PATH_GQL  "/graphql"
+#define FB_API_PATH_AUTH  "/method/auth.login"
+#define FB_API_PATH_FQL   "/fql"
+#define FB_API_PATH_GQL   "/graphql"
+#define FB_API_PATH_PARTS "/participants"
+#define FB_API_PATH_THRDS "/me/threads"
+#define FB_API_PATH_TOPIC "/method/messaging.setthreadname"
 
 #define FB_API_QRYID_CONTACTS  "10153122424521729"
 
@@ -82,6 +85,9 @@ typedef struct fb_api_msg fb_api_msg_t;
 
 /** The structure for representing an #fb_api presence. **/
 typedef struct fb_api_pres fb_api_pres_t;
+
+/** The structure for representing an #fb_api thread. **/
+typedef struct fb_api_thread fb_api_thread_t;
 
 /** The structure for representing an #fb_api user typing state. **/
 typedef struct fb_api_typing fb_api_typing_t;
@@ -165,6 +171,39 @@ struct fb_api_funcs
     void (*presence) (fb_api_t *api, const GSList *press, gpointer data);
 
     /**
+     * The thread_create function. This is called whenever the #fb_api
+     * has created a thread. This is called as a result of
+     * #fb_api_thread_create().
+     *
+     * @param api  The #fb_api.
+     * @param tid  The thread #fb_id.
+     * @param data The user-defined data or NULL.
+     **/
+    void (*thread_create) (fb_api_t *api, fb_id_t tid, gpointer data);
+
+    /**
+     * The thread_info function. This is called whenever the #fb_api
+     * has retrieved thread information. This is called as a result of
+     * #fb_api_thread_info().
+     *
+     * @param api  The #fb_api.
+     * @param thrd The #fb_api_thread.
+     * @param data The user-defined data or NULL.
+     **/
+    void (*thread_info) (fb_api_t *api, fb_api_thread_t *thrd, gpointer data);
+
+    /**
+     * The thread_list function. This is called whenever the #fb_api
+     * has retrieved a set of threads. This is called as a result of
+     * #fb_api_thread_list().
+     *
+     * @param api   The #fb_api.
+     * @param thrds The #GSList of #fb_api_thread.
+     * @param data  The user-defined data or NULL.
+     **/
+    void (*thread_list) (fb_api_t *api, const GSList *thrds, gpointer data);
+
+    /**
      * The typing function. This is called whenever the #fb_api has
      * retrieved a typing state update.
      *
@@ -202,6 +241,7 @@ struct fb_api
 struct fb_api_msg
 {
     fb_id_t      uid;  /** The #fb_id of the user. **/
+    fb_id_t      tid;  /** The #fb_id of the thread. **/
     const gchar *text; /** The message text. **/
 };
 
@@ -212,6 +252,16 @@ struct fb_api_pres
 {
     fb_id_t  uid;    /** The #fb_id of the user. **/
     gboolean active; /** TRUE if the user is active. **/
+};
+
+/**
+ * The structure for representing an #fb_api thread.
+ **/
+struct fb_api_thread
+{
+    fb_id_t      tid;   /** The #fb_id of the thread. **/
+    const gchar *topic; /** The topic of the thread or NULL. **/
+    GSList      *users; /** The #GList of #fb_api_user. **/
 };
 
 /**
@@ -253,9 +303,20 @@ void fb_api_connect(fb_api_t *api);
 
 void fb_api_disconnect(fb_api_t *api);
 
-void fb_api_message(fb_api_t *api, fb_id_t uid, const gchar *msg);
+void fb_api_message(fb_api_t *api, fb_id_t id, gboolean thread,
+                    const gchar *msg);
 
 void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...);
+
+void fb_api_thread_create(fb_api_t *api, GSList *uids);
+
+void fb_api_thread_info(fb_api_t *api, fb_id_t tid);
+
+void fb_api_thread_invite(fb_api_t *api, fb_id_t tid, fb_id_t uid);
+
+void fb_api_thread_list(fb_api_t *api, guint limit);
+
+void fb_api_thread_topic(fb_api_t *api, fb_id_t tid, const gchar *topic);
 
 void fb_api_typing(fb_api_t *api, fb_id_t uid, gboolean state);
 
