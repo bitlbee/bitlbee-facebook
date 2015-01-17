@@ -194,7 +194,7 @@ static void fb_mqtt_timeout(fb_mqtt_t *mqtt)
     g_return_if_fail(mqtt != NULL);
 
     fb_mqtt_timeout_clear(mqtt);
-    mqtt->tev = b_timeout_add(FB_MQTT_TIMEOUT, fb_mqtt_cb_timeout, mqtt);
+    mqtt->tev = b_timeout_add(FB_MQTT_TIMEOUT_CONN, fb_mqtt_cb_timeout, mqtt);
 }
 
 /**
@@ -232,7 +232,7 @@ static void fb_mqtt_ping(fb_mqtt_t *mqtt)
     g_return_if_fail(mqtt != NULL);
 
     fb_mqtt_timeout_clear(mqtt);
-    mqtt->tev = b_timeout_add(FB_MQTT_TIMEOUT, fb_mqtt_cb_ping, mqtt);
+    mqtt->tev = b_timeout_add(FB_MQTT_TIMEOUT_PING, fb_mqtt_cb_ping, mqtt);
 }
 
 /**

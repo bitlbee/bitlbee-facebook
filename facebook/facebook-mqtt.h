@@ -25,12 +25,14 @@
 
 #include "facebook-util.h"
 
-#define FB_MQTT_NAME    "MQIsdp"
-#define FB_MQTT_VERS    3
-#define FB_MQTT_KA      60
-#define FB_MQTT_HOST    "mqtt.facebook.com"
-#define FB_MQTT_PORT    443
-#define FB_MQTT_TIMEOUT (FB_MQTT_KA * 1000)
+#define FB_MQTT_NAME "MQIsdp"
+#define FB_MQTT_VERS 3
+#define FB_MQTT_KA   60
+#define FB_MQTT_HOST "mqtt.facebook.com"
+#define FB_MQTT_PORT 443
+
+#define FB_MQTT_TIMEOUT_CONN (FB_MQTT_KA * 1500)
+#define FB_MQTT_TIMEOUT_PING (FB_MQTT_KA * 1000)
 
 /**
  * Executes one of the #fb_mqtt_funcs.
