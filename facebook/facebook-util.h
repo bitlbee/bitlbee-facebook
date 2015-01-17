@@ -48,7 +48,7 @@ gboolean fb_util_debugging(void);
 void fb_util_hexdump(const GByteArray *bytes, guint indent,
                      const gchar *fmt, ...);
 #else /* DEBUG_FACEBOOK */
-#define fb_util_hexdump(bs, d, i)
+#define fb_util_hexdump(bs, i, f, ...)
 #endif /* DEBUG_FACEBOOK */
 
 gboolean fb_util_str_iequal(const gchar *s1, const gchar *s2);
