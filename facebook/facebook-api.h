@@ -148,7 +148,7 @@ struct fb_api_funcs
      * @param users The #GSList of #fb_api_user.
      * @param data  The user-defined data or NULL.
      **/
-    void (*contacts) (fb_api_t *api, const GSList *users, gpointer data);
+    void (*contacts) (fb_api_t *api, GSList *users, gpointer data);
 
     /**
      * The message function. This is called whenever the #fb_api has
@@ -158,7 +158,7 @@ struct fb_api_funcs
      * @param msgs The #GSList of #fb_api_msg.
      * @param data The user-defined data or NULL.
      **/
-    void (*message) (fb_api_t *api, const GSList *msgs, gpointer data);
+    void (*message) (fb_api_t *api, GSList *msgs, gpointer data);
 
     /**
      * The presence function. This is called whenever the #fb_api has
@@ -168,7 +168,7 @@ struct fb_api_funcs
      * @param press The #GSList of #fb_api_pres.
      * @param data  The user-defined data or NULL.
      **/
-    void (*presence) (fb_api_t *api, const GSList *press, gpointer data);
+    void (*presence) (fb_api_t *api, GSList *press, gpointer data);
 
     /**
      * The thread_create function. This is called whenever the #fb_api
@@ -201,7 +201,7 @@ struct fb_api_funcs
      * @param thrds The #GSList of #fb_api_thread.
      * @param data  The user-defined data or NULL.
      **/
-    void (*thread_list) (fb_api_t *api, const GSList *thrds, gpointer data);
+    void (*thread_list) (fb_api_t *api, GSList *thrds, gpointer data);
 
     /**
      * The typing function. This is called whenever the #fb_api has

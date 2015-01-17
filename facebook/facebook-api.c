@@ -1089,7 +1089,7 @@ finish:
 void fb_api_thread_create(fb_api_t *api, GSList *uids)
 {
     fb_http_req_t *req;
-    const GSList  *l;
+    GSList        *l;
     GString       *to;
     fb_id_t       *uid;
 

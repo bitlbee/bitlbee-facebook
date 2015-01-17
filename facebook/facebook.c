@@ -77,12 +77,11 @@ static void fb_cb_api_connect(fb_api_t *api, gpointer data)
  * @param users The #GSList of #fb_api_user.
  * @param data  The user defined data, which is #fb_data.
  **/
-static void fb_cb_api_contacts(fb_api_t *api, const GSList *users,
-                               gpointer data)
+static void fb_cb_api_contacts(fb_api_t *api, GSList *users, gpointer data)
 {
     fb_data_t     *fata = data;
     fb_api_user_t *user;
-    const GSList  *l;
+    GSList        *l;
     gchar          uid[FB_ID_STRMAX];
 
     for (l = users; l != NULL; l = l->next) {
@@ -104,12 +103,12 @@ static void fb_cb_api_contacts(fb_api_t *api, const GSList *users,
  * @param msgs The #GSList of #fb_api_msg.
  * @param data The user defined data, which is #fb_data.
  **/
-static void fb_cb_api_message(fb_api_t *api, const GSList *msgs, gpointer data)
+static void fb_cb_api_message(fb_api_t *api, GSList *msgs, gpointer data)
 {
     fb_data_t        *fata = data;
     fb_api_msg_t     *msg;
     struct groupchat *gc;
-    const GSList     *l;
+    GSList           *l;
     gchar             uid[FB_ID_STRMAX];
     gchar             tid[FB_ID_STRMAX];
 
@@ -137,12 +136,11 @@ static void fb_cb_api_message(fb_api_t *api, const GSList *msgs, gpointer data)
  * @param press The #GSList of #fb_api_msg.
  * @param data  The user defined data, which is #fb_data.
  **/
-static void fb_cb_api_presence(fb_api_t *api, const GSList *press,
-                               gpointer data)
+static void fb_cb_api_presence(fb_api_t *api, GSList *press, gpointer data)
 {
     fb_data_t     *fata = data;
     fb_api_pres_t *pres;
-    const GSList  *l;
+    GSList        *l;
     guint          flags;
     gchar          uid[FB_ID_STRMAX];
 
@@ -238,15 +236,14 @@ static void fb_cb_api_thread_info(fb_api_t *api, fb_api_thread_t *thrd,
  * @param thrds The #GSList of #fb_api_thread.
  * @param data  The user defined data, which is #fb_data.
  **/
-static void fb_cb_api_thread_list(fb_api_t *api, const GSList *thrds,
-                                  gpointer data)
+static void fb_cb_api_thread_list(fb_api_t *api, GSList *thrds, gpointer data)
 {
     fb_data_t       *fata = data;
     fb_api_thread_t *thrd;
     fb_api_user_t   *user;
     GSList          *phrds;
-    const GSList    *l;
-    const GSList    *m;
+    GSList          *l;
+    GSList          *m;
     GString         *ln;
     gpointer         mptr;
     guint            i;
