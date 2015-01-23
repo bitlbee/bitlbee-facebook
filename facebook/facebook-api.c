@@ -354,23 +354,22 @@ static void fb_api_cb_mqtt_connack(fb_mqtt_t *mqtt, gpointer data)
         "}", FB_MQTT_KA);
 
     fb_mqtt_subscribe(mqtt,
-        "/quick_promotion_refresh", 0,
-        "/webrtc", 0,
-        "/delete_messages_notification", 0,
-        "/orca_message_notifications", 0,
-        "/messaging_events", 0,
-        "/mercury", 0,
-        "/t_rtc", 0,
         "/inbox", 0,
+        "/mercury", 0,
+        "/messaging_events", 0,
         "/orca_presence", 0,
-        "/webrtc_response", 0,
-        "/push_notification", 0,
-        "/pp", 0,
         "/orca_typing_notifications", 0,
+        "/pp", 0,
         "/t_ms", 0,
         "/t_p", 0,
+        "/t_rtc", 0,
+        "/webrtc", 0,
+        "/webrtc_response", 0,
         NULL
     );
+
+    /* Notifications seem to lead to some sort of sending rate limit */
+    fb_mqtt_unsubscribe(mqtt, "/orca_message_notifications", NULL);
 
     req = fb_api_req_new(api, FB_API_GHOST, FB_API_PATH_FQL,
                          fb_api_cb_seqid,
