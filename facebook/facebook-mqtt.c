@@ -338,8 +338,7 @@ void fb_mqtt_read(fb_mqtt_t *mqtt, fb_mqtt_msg_t *msg)
         }
 
         if (chr != FB_MQTT_ERROR_SUCCESS) {
-            fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
-                          "Connection failed (%u)", chr);
+            fb_mqtt_error(mqtt, chr, "Connection failed (%u)", chr);
             return;
         }
 
