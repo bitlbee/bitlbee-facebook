@@ -113,7 +113,9 @@ void fb_mqtt_close(fb_mqtt_t *mqtt)
         FB_UTIL_DEBUGLN("Closing with unwritten data");
 #endif /* DEBUG_FACEBOOK */
 
+    mqtt->connected = FALSE;
     g_clear_error(&mqtt->err);
+
     g_byte_array_set_size(mqtt->rbuf, 0);
     g_byte_array_set_size(mqtt->wbuf, 0);
 }
