@@ -426,7 +426,7 @@ struct groupchat *fb_data_groupchat_new(struct im_connection *ic,
     fata->gcs = g_slist_prepend(fata->gcs, gc);
 
     if (name != NULL) {
-        if (name[0] == '#')
+        if (strchr(CTYPES, name[0]) != NULL)
             name++;
         imcb_chat_name_hint(gc, name);
     }
