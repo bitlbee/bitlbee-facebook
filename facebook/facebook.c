@@ -718,29 +718,81 @@ static void fb_buddy_data_free(struct bee_user *bu)
 /**
  * Obtains a #account from command arguments.
  *
- * @param irc  The #irc.
- * @param args The command arguments.
+ * @param irc      The #irc.
+ * @param args     The command arguments.
+ * @param required The amount of required arguments.
+ * @param offset   The return location for the args offset.
+ *
+ * @return The #account or NULL on error.
  **/
-static account_t *fb_cmd_account(irc_t *irc, char **args)
+static account_t *fb_cmd_account(irc_t *irc, char **args, guint required,
+                                 guint *offset)
 {
+    account_t *a;
     account_t *acc;
+    guint      accs;
+    guint      size;
+    guint      oset;
 
-    acc = account_get(irc->b, args[1]);
+    for (accs = 0, a = irc->b->accounts; a != NULL; a = a->next) {
+        if ((g_ascii_strcasecmp(a->prpl->name, "facebook") == 0) &&
+            (a->ic != NULL))
+        {
+            acc = a;
+            accs++;
+        }
+    }
 
-    if (acc == NULL) {
-        irc_rootmsg(irc, "Unknown account: %s", args[1]);
+    if (accs == 0) {
+        irc_rootmsg(irc, "There are no active Facebook accounts!");
         return NULL;
     }
 
-    if (acc->ic == NULL) {
-        irc_rootmsg(irc, "Account not online: %s", acc->tag);
+    /* Calculate the size of args */
+    for (size = 1; args[size] != NULL; size++);
+
+    if (accs > 1) {
+        if (args[1] == NULL) {
+            irc_rootmsg(irc, "More than one Facebook account, specify one.");
+            return NULL;
+        }
+
+        /* More than one account, look up by handle */
+        acc  = account_get(irc->b, args[1]);
+        oset = 2;
+
+        if (acc == NULL) {
+            irc_rootmsg(irc, "Unknown account: %s", args[1]);
+            return NULL;
+        }
+
+        if (acc->ic == NULL) {
+            irc_rootmsg(irc, "Account not online: %s", acc->tag);
+            return NULL;
+        }
+
+        if (g_ascii_strcasecmp(acc->prpl->name, "facebook") != 0) {
+            irc_rootmsg(irc, "Unknown Facebook account: %s", acc->tag);
+            return NULL;
+        }
+    } else if ((size != (required + 1)) &&
+               (args[1] != NULL) &&
+               (account_get(irc->b, args[1]) == acc))
+    {
+        /* One account with an identifier */
+        oset = 2;
+    } else {
+        /* One account without an identifier */
+        oset = 1;
+    }
+
+    if (size < (oset + required)) {
+        irc_rootmsg(irc, "Not enough parameters given (need %u).", required);
         return NULL;
     }
 
-    if (g_ascii_strcasecmp(acc->prpl->name, "facebook") != 0) {
-        irc_rootmsg(irc, "Unknown Facebook account: %s", acc->tag);
-        return NULL;
-    }
+    if (offset != NULL)
+        *offset = oset;
 
     return acc;
 }
@@ -756,7 +808,7 @@ static void fb_cmd_fbchats(irc_t *irc, char **args)
     account_t *acc;
     fb_data_t *fata;
 
-    acc = fb_cmd_account(irc, args);
+    acc = fb_cmd_account(irc, args, 0, NULL);
 
     if (acc == NULL)
         return;
@@ -778,9 +830,10 @@ static void fb_cmd_fbcreate(irc_t *irc, char **args)
     fb_id_t     uid;
     irc_user_t *iu;
     GSList     *uids;
+    guint       oset;
     guint       i;
 
-    acc  = fb_cmd_account(irc, args);
+    acc  = fb_cmd_account(irc, args, 2, &oset);
     uids = NULL;
 
     if (acc == NULL)
@@ -788,7 +841,7 @@ static void fb_cmd_fbcreate(irc_t *irc, char **args)
 
     fata = acc->ic->proto_data;
 
-    for (i = 2; args[i] != NULL; i++) {
+    for (i = oset; args[i] != NULL; i++) {
         iu = irc_user_by_name(irc, args[i]);
 
         if (iu != NULL) {
@@ -817,16 +870,17 @@ static void fb_cmd_fbjoin(irc_t *irc, char **args)
     account_t *acc;
     fb_data_t *fata;
     fb_id_t   *tid;
+    guint      oset;
     gint64     indx;
     gchar      stid[FB_ID_STRMAX];
 
-    acc = fb_cmd_account(irc, args);
+    acc = fb_cmd_account(irc, args, 2, &oset);
 
     if (acc == NULL)
         return;
 
     fata = acc->ic->proto_data;
-    indx = g_ascii_strtoll(args[2], NULL, 10);
+    indx = g_ascii_strtoll(args[oset], NULL, 10);
     tid  = g_slist_nth_data(fata->tids, indx - 1);
 
     if ((indx < 1) || (tid == NULL)) {
@@ -836,7 +890,7 @@ static void fb_cmd_fbjoin(irc_t *irc, char **args)
 
     FB_ID_TO_STR(*tid, stid);
 
-    gchar *cmd[] = {"chat", "add", acc->tag, stid, args[3], NULL};
+    gchar *cmd[] = {"chat", "add", acc->tag, stid, args[oset + 1], NULL};
     root_command(irc, cmd);
 }
 
@@ -878,7 +932,7 @@ void init_plugin()
 
     register_protocol(pp);
 
-    root_command_add("fbchats",  1, fb_cmd_fbchats,  0);
-    root_command_add("fbcreate", 3, fb_cmd_fbcreate, 0);
-    root_command_add("fbjoin",   3, fb_cmd_fbjoin,   0);
+    root_command_add("fbchats",  0, fb_cmd_fbchats,  0);
+    root_command_add("fbcreate", 0, fb_cmd_fbcreate, 0);
+    root_command_add("fbjoin",   0, fb_cmd_fbjoin,   0);
 }
