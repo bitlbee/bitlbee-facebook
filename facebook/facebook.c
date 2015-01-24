@@ -425,8 +425,12 @@ struct groupchat *fb_data_groupchat_new(struct im_connection *ic,
     gc = imcb_chat_new(ic, stid);
     fata->gcs = g_slist_prepend(fata->gcs, gc);
 
-    if (name != NULL)
-        imcb_chat_name_hint(gc, name);
+    if (name != NULL) {
+        if (name[0] == '#')
+            imcb_chat_name_hint(gc, name + 1);
+        else
+            imcb_chat_name_hint(gc, name);
+    }
 
     imcb_chat_add_buddy(gc, ic->acc->user);
     fb_api_thread_info(fata->api, tid);
