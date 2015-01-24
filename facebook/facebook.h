@@ -45,4 +45,10 @@ fb_data_t *fb_data_new(account_t *acc);
 
 void fb_data_free(fb_data_t *fata);
 
+struct groupchat *fb_data_groupchat_new(struct im_connection *ic,
+                                        fb_id_t tid,
+                                        const gchar *name);
+
+void fb_data_groupchat_free(struct groupchat *gc);
+
 #endif /* _FACEBOOK_H */

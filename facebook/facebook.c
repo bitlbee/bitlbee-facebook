@@ -399,6 +399,63 @@ void fb_data_free(fb_data_t *fata)
 }
 
 /**
+ * Creates a new #groupchat and adds it to the #fb_data. The returned
+ * #groupchat should be freed with #fb_data_groupchat_free() when no
+ * longer needed.
+ *
+ * @param ic   The #im_connection.
+ * @param tid  The thread #fb_id.
+ * @param name The name of the channel.
+ *
+ * @return The #groupchat or NULL on error.
+ **/
+struct groupchat *fb_data_groupchat_new(struct im_connection *ic,
+                                        fb_id_t tid,
+                                        const gchar *name)
+{
+    fb_data_t        *fata = ic->proto_data;
+    struct groupchat *gc;
+    gchar             stid[FB_ID_STRMAX];
+
+    FB_ID_TO_STR(tid, stid);
+
+    if (bee_chat_by_title(ic->bee, ic, stid) != NULL)
+        return NULL;
+
+    gc = imcb_chat_new(ic, stid);
+    fata->gcs = g_slist_prepend(fata->gcs, gc);
+
+    if (name != NULL)
+        imcb_chat_name_hint(gc, name);
+
+    imcb_chat_add_buddy(gc, ic->acc->user);
+    fb_api_thread_info(fata->api, tid);
+
+    return gc;
+}
+
+/**
+ * Frees all memory used by a #groupchat and removes it from the
+ * #fb_data.
+ *
+ * @param gc The #groupchat.
+ **/
+void fb_data_groupchat_free(struct groupchat *gc)
+{
+    fb_data_t *fata;
+
+    if (G_UNLIKELY(gc == NULL))
+        return;
+
+    if (G_LIKELY(gc->ic != NULL)) {
+        fata = gc->ic->proto_data;
+        fata->gcs = g_slist_remove(fata->gcs, gc);
+    }
+
+    imcb_chat_free(gc);
+}
+
+/**
  * Implements #prpl->init(). This initializes an account.
  *
  * @param acc The #account.
@@ -608,10 +665,7 @@ void fb_chat_invite(struct groupchat *gc, char *who, char *message)
  **/
 void fb_chat_leave(struct groupchat *gc)
 {
-    fb_data_t *fata = gc->ic->proto_data;
-
-    fata->gcs = g_slist_remove(fata->gcs, gc);
-    imcb_chat_free(gc);
+    fb_data_groupchat_free(gc);
 }
 
 /**
@@ -647,13 +701,15 @@ struct groupchat *fb_chat_join(struct im_connection *ic, const char *room,
     fb_id_t           tid;
     struct groupchat *gc;
 
-    gc = imcb_chat_new(ic, room);
-    fata->gcs = g_slist_prepend(fata->gcs, gc);
-    imcb_chat_add_buddy(gc, ic->acc->user);
-
     tid = FB_ID_FROM_STR(room);
-    fb_api_thread_info(fata->api, tid);
+    gc  = fb_data_groupchat_new(ic, tid, NULL);
 
+    if (gc == NULL) {
+        imcb_error(fata->ic, "Failed to join chat: %" FB_ID_FORMAT, tid);
+        return NULL;
+    }
+
+    fb_api_thread_info(fata->api, tid);
     return gc;
 }
 
@@ -870,9 +926,9 @@ static void fb_cmd_fbjoin(irc_t *irc, char **args)
     account_t *acc;
     fb_data_t *fata;
     fb_id_t   *tid;
+    gchar     *name;
     guint      oset;
     gint64     indx;
-    gchar      stid[FB_ID_STRMAX];
 
     acc = fb_cmd_account(irc, args, 2, &oset);
 
@@ -880,6 +936,7 @@ static void fb_cmd_fbjoin(irc_t *irc, char **args)
         return;
 
     fata = acc->ic->proto_data;
+    name = args[oset + 1];
     indx = g_ascii_strtoll(args[oset], NULL, 10);
     tid  = g_slist_nth_data(fata->tids, indx - 1);
 
@@ -888,10 +945,10 @@ static void fb_cmd_fbjoin(irc_t *irc, char **args)
         return;
     }
 
-    FB_ID_TO_STR(*tid, stid);
-
-    gchar *cmd[] = {"chat", "add", acc->tag, stid, args[oset + 1], NULL};
-    root_command(irc, cmd);
+    if (fb_data_groupchat_new(acc->ic, *tid, name) == NULL) {
+        imcb_error(fata->ic, "Failed to join chat: %s (%" FB_ID_FORMAT ")",
+                   name, *tid);
+    }
 }
 
 /**
