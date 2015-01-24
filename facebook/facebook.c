@@ -732,6 +732,11 @@ static account_t *fb_cmd_account(irc_t *irc, char **args)
         return NULL;
     }
 
+    if (acc->ic == NULL) {
+        irc_rootmsg(irc, "Account not online: %s", acc->tag);
+        return NULL;
+    }
+
     if (g_ascii_strcasecmp(acc->prpl->name, "facebook") != 0) {
         irc_rootmsg(irc, "Unknown Facebook account: %s", acc->tag);
         return NULL;
