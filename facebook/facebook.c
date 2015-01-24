@@ -427,9 +427,8 @@ struct groupchat *fb_data_groupchat_new(struct im_connection *ic,
 
     if (name != NULL) {
         if (name[0] == '#')
-            imcb_chat_name_hint(gc, name + 1);
-        else
-            imcb_chat_name_hint(gc, name);
+            name++;
+        imcb_chat_name_hint(gc, name);
     }
 
     imcb_chat_add_buddy(gc, ic->acc->user);
