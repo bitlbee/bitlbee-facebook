@@ -149,7 +149,7 @@ static void fb_cb_api_presence(fb_api_t *api, GSList *press, gpointer data)
         flags = 0;
 
         if (pres->active)
-            flags |= OPT_LOGGED_IN;
+            flags |= BEE_USER_ONLINE;
 
         FB_ID_TO_STR(pres->uid, uid);
         imcb_buddy_status(fata->ic, uid, flags, NULL, NULL);
