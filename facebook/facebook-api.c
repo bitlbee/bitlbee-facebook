@@ -453,7 +453,7 @@ static void fb_api_cb_publish_mr(fb_api_t *api, const GByteArray *pload)
 
     if (!g_queue_is_empty(api->msgs)) {
         msg = g_queue_peek_head(api->msgs);
-        fb_api_publish(api, "/send_message2", msg, NULL);
+        fb_api_publish(api, "/send_message2", "%s", msg);
     }
 
 finish:
@@ -1009,7 +1009,7 @@ void fb_api_message(fb_api_t *api, fb_id_t id, gboolean thread,
         "}", msg, tpfx, id, api->uid, msgid);
 
     if (g_queue_is_empty(api->msgs))
-        fb_api_publish(api, "/send_message2", rmsg, NULL);
+        fb_api_publish(api, "/send_message2", "%s", rmsg);
 
     g_queue_push_tail(api->msgs, rmsg);
 }

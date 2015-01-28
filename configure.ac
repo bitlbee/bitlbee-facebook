@@ -69,7 +69,7 @@ AS_IF(
     [AC_DEFINE(DEBUG_FACEBOOK, 1)
      AS_IF(
         [test "x$MINIMAL_FLAGS" == "xno"],
-        [CFLAGS="$CFLAGS -Wall -g -O0"]
+        [CFLAGS="$CFLAGS -Wall -Wformat-nonliteral -g -O0"]
     )]
 )
 

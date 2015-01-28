@@ -293,7 +293,8 @@ void fb_api_rehash(fb_api_t *api);
 
 void fb_api_free(fb_api_t *api);
 
-void fb_api_error(fb_api_t *api, fb_api_error_t err, const gchar *fmt, ...);
+void fb_api_error(fb_api_t *api, fb_api_error_t err, const gchar *fmt, ...)
+    G_GNUC_PRINTF(3, 4);
 
 void fb_api_auth(fb_api_t *api, const gchar *user, const gchar *pass);
 
@@ -306,7 +307,8 @@ void fb_api_disconnect(fb_api_t *api);
 void fb_api_message(fb_api_t *api, fb_id_t id, gboolean thread,
                     const gchar *msg);
 
-void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...);
+void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...)
+    G_GNUC_PRINTF(3, 4);
 
 void fb_api_thread_create(fb_api_t *api, GSList *uids);
 

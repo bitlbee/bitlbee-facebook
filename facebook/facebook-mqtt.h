@@ -229,8 +229,8 @@ void fb_mqtt_free(fb_mqtt_t *mqtt);
 
 void fb_mqtt_close(fb_mqtt_t *mqtt);
 
-void fb_mqtt_error(fb_mqtt_t *mqtt, fb_mqtt_error_t err,
-                   const gchar *fmt, ...);
+void fb_mqtt_error(fb_mqtt_t *mqtt, fb_mqtt_error_t err, const gchar *fmt, ...)
+    G_GNUC_PRINTF(3, 4);
 
 void fb_mqtt_read(fb_mqtt_t *mqtt, fb_mqtt_msg_t *msg);
 

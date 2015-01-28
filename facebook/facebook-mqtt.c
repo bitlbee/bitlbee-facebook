@@ -129,8 +129,7 @@ void fb_mqtt_close(fb_mqtt_t *mqtt)
  * @param fmt   The format string.
  * @param ...   The arguments for the format string.
  **/
-void fb_mqtt_error(fb_mqtt_t *mqtt, fb_mqtt_error_t err,
-                   const gchar *fmt, ...)
+void fb_mqtt_error(fb_mqtt_t *mqtt, fb_mqtt_error_t err, const gchar *fmt, ...)
 {
     gchar   *str;
     va_list  ap;
