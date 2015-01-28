@@ -429,38 +429,6 @@ finish:
 }
 
 /**
- * Handles message responses which publish the next message queued.
- *
- * @param api   The #fb_api.
- * @param pload The message payload.
- **/
-static void fb_api_cb_publish_mr(fb_api_t *api, const GByteArray *pload)
-{
-    json_value *json;
-    gchar      *msg;
-    gboolean    res;
-
-    if (!fb_api_json_new(api, (gchar*) pload->data, pload->len, &json))
-        return;
-
-    if (!fb_json_bool_chk(json, "succeeded", &res) || !res) {
-        fb_api_error(api, FB_API_ERROR, "Failed to send message");
-        goto finish;
-    }
-
-    msg = g_queue_pop_head(api->msgs);
-    g_free(msg);
-
-    if (!g_queue_is_empty(api->msgs)) {
-        msg = g_queue_peek_head(api->msgs);
-        fb_api_publish(api, "/send_message2", "%s", msg);
-    }
-
-finish:
-    json_value_free(json);
-}
-
-/**
  * Handles messages which are to be published to the user.
  *
  * @param api   The #fb_api.
@@ -650,11 +618,8 @@ static void fb_api_cb_mqtt_publish(fb_mqtt_t *mqtt, const gchar *topic,
 
     fb_util_hexdump(bytes, 2, "Reading message:");
 
-
     if (g_ascii_strcasecmp(topic, "/orca_typing_notifications") == 0)
         fb_api_cb_publish_tn(api, bytes);
-    else if (g_ascii_strcasecmp(topic, "/send_message_response") == 0)
-        fb_api_cb_publish_mr(api, bytes);
     else if (g_ascii_strcasecmp(topic, "/t_ms") == 0)
         fb_api_cb_publish_ms(api, bytes);
     else if (g_ascii_strcasecmp(topic, "/t_p") == 0)
@@ -694,7 +659,6 @@ fb_api_t *fb_api_new(const fb_api_funcs_t *funcs, gpointer data)
     api->data = data;
     api->http = fb_http_new(FB_API_AGENT);
     api->mqtt = fb_mqtt_new(&muncs, api);
-    api->msgs = g_queue_new();
 
     return api;
 }
@@ -743,7 +707,6 @@ void fb_api_free(fb_api_t *api)
     if (api->err != NULL)
         g_error_free(api->err);
 
-    g_queue_free_full(api->msgs, g_free);
     fb_mqtt_free(api->mqtt);
     fb_http_free(api->http);
 
@@ -993,7 +956,6 @@ void fb_api_message(fb_api_t *api, fb_id_t id, gboolean thread,
 {
     guint64      msgid;
     const gchar *tpfx;
-    gchar       *rmsg;
 
     g_return_if_fail(api != NULL);
     g_return_if_fail(msg != NULL);
@@ -1001,17 +963,12 @@ void fb_api_message(fb_api_t *api, fb_id_t id, gboolean thread,
     msgid = FB_API_MSGID(g_get_real_time() / 1000, g_random_int());
     tpfx  = thread ? "tfbid_" : "";
 
-    rmsg = g_strdup_printf("{"
+    fb_api_publish(api, "/send_message2", "{"
             "\"body\":\"%s\","
             "\"to\":\"%s%" FB_ID_FORMAT "\","
             "\"sender_fbid\":\"%" FB_ID_FORMAT "\","
             "\"msgid\":%" G_GUINT64_FORMAT
         "}", msg, tpfx, id, api->uid, msgid);
-
-    if (g_queue_is_empty(api->msgs))
-        fb_api_publish(api, "/send_message2", "%s", rmsg);
-
-    g_queue_push_tail(api->msgs, rmsg);
 }
 
 /**
