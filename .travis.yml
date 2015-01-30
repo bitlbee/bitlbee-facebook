@@ -1,0 +1,51 @@
+language: c
+
+notifications:
+  email: false
+
+os:
+  - linux
+
+compiler:
+  - gcc
+
+env:
+  - DEBUG=disable
+  - DEBUG=enable
+
+before_install:
+  - sudo apt-get update -qq
+  - sudo apt-get install -qq
+      --no-install-recommends
+      asciidoc
+      clang
+      lynx
+      xsltproc
+      xmlto
+  - git clone https://github.com/bitlbee/bitlbee
+  - cd bitlbee
+  - git checkout -b develop origin/develop
+  - ./configure
+      --events=glib
+      --ssl=gnutls
+      --debug=1
+      --plugins=1
+      --jabber=0
+      --msn=0
+      --oscar=0
+      --otr=0
+      --purple=0
+      --skype=0
+      --twitter=0
+      --yahoo=0
+  - make
+  - sudo make install install-dev
+  - cd -
+
+script:
+  - ./autogen.sh --${DEBUG}-debug
+  - scan-build -k
+      --use-cc=$(which "${CC}")
+      --status-bugs
+      -analyze-headers
+      make
