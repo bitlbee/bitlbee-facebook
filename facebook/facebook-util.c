@@ -167,7 +167,7 @@ gboolean fb_util_zcompressed(const GByteArray *bytes)
     guint8 b0;
     guint8 b1;
 
-    g_return_if_fail(bytes != NULL);
+    g_return_val_if_fail(bytes != NULL, FALSE);
 
     if (bytes->len < 2)
         return FALSE;
@@ -194,7 +194,7 @@ GByteArray *fb_util_zcompress(const GByteArray *bytes)
     gsize       size;
     gint        res;
 
-    g_return_if_fail(bytes != NULL);
+    g_return_val_if_fail(bytes != NULL, NULL);
 
     memset(&zs, 0, sizeof zs);
     zs.zalloc   = fb_util_zalloc;
@@ -243,7 +243,7 @@ GByteArray *fb_util_zuncompress(const GByteArray *bytes)
     guint8      out[1024];
     gint        res;
 
-    g_return_if_fail(bytes != NULL);
+    g_return_val_if_fail(bytes != NULL, NULL);
 
     memset(&zs, 0, sizeof zs);
     zs.zalloc   = fb_util_zalloc;
