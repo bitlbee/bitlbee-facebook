@@ -1088,13 +1088,13 @@ finish:
 void fb_api_thread_create(fb_api_t *api, GSList *uids)
 {
     fb_http_req_t *req;
+    GSList        *cids;
     GSList        *l;
     GString       *to;
     fb_id_t       *uid;
 
-    g_return_if_fail(api  != NULL);
-    g_return_if_fail(uids != NULL);
-    g_warn_if_fail(g_slist_length(uids) < 2);
+    g_return_if_fail(api != NULL);
+    g_warn_if_fail((uids != NULL) && (uids->next != NULL));
 
     req = fb_api_req_new(api, FB_API_GHOST, FB_API_PATH_THRDS,
                          fb_api_cb_thread_create,
@@ -1103,9 +1103,10 @@ void fb_api_thread_create(fb_api_t *api, GSList *uids)
                          "POST");
 
     to   = g_string_new(NULL);
-    uids = g_slist_prepend(uids, &api->uid);
+    cids = g_slist_copy(uids);
+    cids = g_slist_prepend(cids, &api->uid);
 
-    for (l = uids; l != NULL; l = l->next) {
+    for (l = cids; l != NULL; l = l->next) {
         uid = l->data;
 
         if (to->len > 0)
@@ -1117,8 +1118,6 @@ void fb_api_thread_create(fb_api_t *api, GSList *uids)
             "}", *uid);
     }
 
-    /* Pop the #fb_api->uid off */
-    uids = g_slist_delete_link(uids, uids);
     g_string_prepend_c(to, '[');
     g_string_append_c(to, ']');
 
@@ -1129,6 +1128,7 @@ void fb_api_thread_create(fb_api_t *api, GSList *uids)
 
     fb_api_req_send(api, req);
     g_string_free(to, TRUE);
+    g_slist_free(cids);
 }
 
 /**
