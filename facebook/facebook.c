@@ -415,6 +415,7 @@ struct groupchat *fb_data_groupchat_new(struct im_connection *ic,
 {
     fb_data_t        *fata = ic->proto_data;
     struct groupchat *gc;
+    irc_channel_t    *ch;
     gchar             stid[FB_ID_STRMAX];
 
     FB_ID_TO_STR(tid, stid);
@@ -422,15 +423,32 @@ struct groupchat *fb_data_groupchat_new(struct im_connection *ic,
     if (bee_chat_by_title(ic->bee, ic, stid) != NULL)
         return NULL;
 
-    gc = imcb_chat_new(ic, stid);
-    fata->gcs = g_slist_prepend(fata->gcs, gc);
-
     if (name != NULL) {
         if (strchr(CTYPES, name[0]) != NULL)
             name++;
+
+        /* Let the hackery being... */
+        gc = imcb_chat_new(ic, stid);
         imcb_chat_name_hint(gc, name);
+
+        ch = gc->ui_data;
+        ch->flags |= IRC_CHANNEL_CHAT_PICKME;
+
+        /* Setup the channel as a room */
+        set_setstr(&ch->set, "type",      "chat");
+        set_setstr(&ch->set, "chat_type", "room");
+        set_setstr(&ch->set, "account",   ic->acc->tag);
+        set_setstr(&ch->set, "room",      stid);
+
+        /* Free and recreate with new channel settings */
+        imcb_chat_free(gc);
     }
 
+    gc = imcb_chat_new(ic, stid);
+    ch = gc->ui_data;
+    fata->gcs = g_slist_prepend(fata->gcs, gc);
+
+    ch->flags &= ~IRC_CHANNEL_CHAT_PICKME;
     imcb_chat_add_buddy(gc, ic->acc->user);
     fb_api_thread_info(fata->api, tid);
 
@@ -712,7 +730,6 @@ struct groupchat *fb_chat_join(struct im_connection *ic, const char *room,
         return NULL;
     }
 
-    fb_api_thread_info(fata->api, tid);
     return gc;
 }
 
