@@ -71,4 +71,6 @@ const gchar *fb_json_str(const json_value *json, const gchar *name);
 gboolean fb_json_str_chk(const json_value *json, const gchar *name,
                          const gchar **val);
 
+gchar *fb_json_str_escape(const gchar *str);
+
 #endif /* _FACEBOOK_JSON_H */

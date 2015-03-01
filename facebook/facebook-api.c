@@ -956,6 +956,7 @@ void fb_api_message(fb_api_t *api, fb_id_t id, gboolean thread,
 {
     guint64      msgid;
     const gchar *tpfx;
+    gchar       *escaped;
 
     g_return_if_fail(api != NULL);
     g_return_if_fail(msg != NULL);
@@ -963,12 +964,16 @@ void fb_api_message(fb_api_t *api, fb_id_t id, gboolean thread,
     msgid = FB_API_MSGID(g_get_real_time() / 1000, g_random_int());
     tpfx  = thread ? "tfbid_" : "";
 
+    escaped = fb_json_str_escape(msg);
+
     fb_api_publish(api, "/send_message2", "{"
             "\"body\":\"%s\","
             "\"to\":\"%s%" FB_ID_FORMAT "\","
             "\"sender_fbid\":\"%" FB_ID_FORMAT "\","
             "\"msgid\":%" G_GUINT64_FORMAT
-        "}", msg, tpfx, id, api->uid, msgid);
+        "}", escaped, tpfx, id, api->uid, msgid);
+
+    g_free(escaped);
 }
 
 /**

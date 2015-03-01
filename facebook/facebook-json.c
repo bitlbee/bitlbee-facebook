@@ -314,3 +314,35 @@ gboolean fb_json_str_chk(const json_value *json, const gchar *name,
     *val = jv->u.string.ptr;
     return TRUE;
 }
+
+/**
+ * Backslash-escapes a string to make it safe for json. The returned string
+ * should be freed with #g_free() when no longer needed.
+ *
+ * @param str The string to escape.
+ *
+ * @return The resulting string, or NULL on error.
+ **/
+gchar *fb_json_str_escape(const gchar *str)
+{
+    GString *out;
+    guint    i;
+
+    g_return_val_if_fail(str != NULL, NULL);
+
+    /* let's overallocate a bit */
+    out = g_string_sized_new(strlen(str) * 2);
+
+    for (i = 0; str[i] != '\0'; i++) {
+        if ((str[i] > 0) && (str[i] < 0x20)) {
+            g_string_append_printf(out, "\\u%04x", str[i]);
+            continue;
+        }
+        if ((str[i] == '"') || (str[i] == '\\')) {
+            g_string_append_c(out, '\\');
+        }
+        g_string_append_c(out, str[i]);
+    }
+
+    return g_string_free(out, FALSE);
+}
