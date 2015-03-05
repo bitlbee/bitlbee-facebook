@@ -1,6 +1,7 @@
 *.la
 *.lo
 *.o
+*.tar.*
 .deps
 .libs
 aclocal.m4
