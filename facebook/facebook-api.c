@@ -274,6 +274,12 @@ static void fb_api_cb_mqtt_open(fb_mqtt_t *mqtt, gpointer data)
     g_free(msg);
 }
 
+/**
+ * Sends /messenger_sync_create_queue to create a new queue baed on the current
+ * sequence id (api->seqid)
+ *
+ * @param api The #fb_api.
+ **/
 static void fb_api_sync_create_queue(fb_api_t *api)
 {
     fb_api_publish(api, "/messenger_sync_create_queue", "{"
