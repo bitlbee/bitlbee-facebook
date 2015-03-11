@@ -72,12 +72,12 @@ static gboolean fb_api_json_new(fb_api_t *api, const gchar *data, gsize size,
         json_value_free(jv);
         return FALSE;
     } else if (fb_json_str_chk(jv, "errorCode", &msg)) {
-        /* hack - make this non-fatal */
-        if (g_ascii_strcasecmp(msg, "ERROR_QUEUE_NOT_FOUND") == 0) {
-            *json = jv;
-            return TRUE;
+        if ((g_ascii_strcasecmp(msg, "ERROR_QUEUE_NOT_FOUND") == 0) ||
+            (g_ascii_strcasecmp(msg, "ERROR_QUEUE_LOST") == 0)) {
+            fb_api_sync_create_queue(api);
+        } else {
+            fb_api_error(api, FB_API_ERROR_GENERAL, "%s", msg);
         }
-        fb_api_error(api, FB_API_ERROR_GENERAL, "%s", msg);
         json_value_free(jv);
         return FALSE;
     }
@@ -470,12 +470,6 @@ static void fb_api_cb_publish_ms(fb_api_t *api, const GByteArray *pload)
         return;
 
     msgs = NULL;
-
-    if (fb_json_str_chk(json, "errorCode", &str) &&
-        g_ascii_strcasecmp(str, "ERROR_QUEUE_NOT_FOUND") == 0) {
-        fb_api_sync_create_queue(api);
-        goto finish;
-    }
 
     if (fb_json_str_chk(json, "syncToken", &str)) {
         g_free(api->stoken);
