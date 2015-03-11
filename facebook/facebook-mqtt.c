@@ -281,7 +281,7 @@ static gboolean fb_mqtt_cb_read(gpointer data, gint fd,
     }
 
     if (mqtt->remz > 0) {
-        rize = ssl_read(mqtt->ssl, buf, MIN(mqtt->rbuf->len, sizeof buf));
+        rize = ssl_read(mqtt->ssl, buf, MIN(mqtt->remz, sizeof buf));
 
         if (rize < 1)
             goto error;
