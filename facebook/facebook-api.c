@@ -616,7 +616,7 @@ static void fb_api_cb_mqtt_publish(fb_mqtt_t *mqtt, const gchar *topic,
         bytes = (GByteArray*) pload;
     }
 
-    fb_util_hexdump(bytes, 2, "Reading message:");
+    fb_util_hexdump(bytes, 2, "Reading message (topic: %s):", topic);
 
     if (g_ascii_strcasecmp(topic, "/orca_typing_notifications") == 0)
         fb_api_cb_publish_tn(api, bytes);
