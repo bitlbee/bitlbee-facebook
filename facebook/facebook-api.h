@@ -232,6 +232,7 @@ struct fb_api
     gchar   *cid;        /** The client identifier. **/
     gchar   *mid;        /** The MQTT identifier. **/
     gchar   *cuid;       /** The client unique identifier. **/
+    gchar   *seqid;      /** The sync sequence id **/
 };
 
 /**
