@@ -50,6 +50,8 @@ json_value *fb_json_new(const gchar *data, gsize length, GError **err)
     json_value    *json;
     json_settings  js;
     gchar         *estr;
+    gchar         *dstr;
+    gchar         *escaped;
 
     memset(&js, 0, sizeof js);
     estr = g_new0(gchar, json_error_max);
@@ -60,8 +62,15 @@ json_value *fb_json_new(const gchar *data, gsize length, GError **err)
         return json;
     }
 
+    /* Ensure it's null-terminated before passing it to g_strescape() */
+    dstr = g_strndup(data, MIN(length, 400));
+    escaped = g_strescape(dstr, "\"");
+
     g_set_error(err, FB_JSON_ERROR, FB_JSON_ERROR_PARSER,
-                "Parser: %s", estr);
+                "Parser: %s\nJSON len=%zd: %s", estr, length, escaped);
+
+    g_free(dstr);
+    g_free(escaped);
 
     g_free(estr);
     return NULL;
