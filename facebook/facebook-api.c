@@ -22,6 +22,8 @@
 #include "facebook-api.h"
 #include "facebook-thrift.h"
 
+static void fb_api_sync_create_queue(fb_api_t *api);
+
 /**
  * Gets the error domain for #fb_api.
  *
@@ -72,7 +74,12 @@ static gboolean fb_api_json_new(fb_api_t *api, const gchar *data, gsize size,
         json_value_free(jv);
         return FALSE;
     } else if (fb_json_str_chk(jv, "errorCode", &msg)) {
-        fb_api_error(api, FB_API_ERROR_GENERAL, "%s", msg);
+        if ((g_ascii_strcasecmp(msg, "ERROR_QUEUE_NOT_FOUND") == 0) ||
+            (g_ascii_strcasecmp(msg, "ERROR_QUEUE_LOST") == 0)) {
+            fb_api_sync_create_queue(api);
+        } else {
+            fb_api_error(api, FB_API_ERROR_GENERAL, "%s", msg);
+        }
         json_value_free(jv);
         return FALSE;
     }
@@ -270,6 +277,25 @@ static void fb_api_cb_mqtt_open(fb_mqtt_t *mqtt, gpointer data)
 }
 
 /**
+ * Sends /messenger_sync_create_queue to create a new queue baed on the current
+ * sequence id (api->seqid)
+ *
+ * @param api The #fb_api.
+ **/
+static void fb_api_sync_create_queue(fb_api_t *api)
+{
+    fb_api_publish(api, "/messenger_sync_create_queue", "{"
+            "\"device_params\":{},"
+            "\"encoding\":\"JSON\","
+            "\"max_deltas_able_to_process\":1250,"
+            "\"initial_titan_sequence_id\":%s,"
+            "\"sync_api_version\":2,"
+            "\"delta_batch_size\":125,"
+            "\"device_id\":\"%s\""
+        "}", api->seqid, api->cuid);
+}
+
+/**
  * Implemented #fb_http_func for the sequence identifier.
  *
  * @param req  The #fb_http_req.
@@ -308,17 +334,11 @@ static void fb_api_cb_seqid(fb_http_req_t *req, gpointer data)
         goto finish;
     }
 
-    if (G_UNLIKELY(api->stoken == NULL)) {
-        fb_api_publish(api, "/messenger_sync_create_queue", "{"
-                "\"device_params\":{},"
-                "\"encoding\":\"JSON\","
-                "\"max_deltas_able_to_process\":1250,"
-                "\"initial_titan_sequence_id\":%s,"
-                "\"sync_api_version\":2,"
-                "\"delta_batch_size\":125,"
-                "\"device_id\":\"%s\""
-            "}", str, api->cuid);
+    g_free(api->seqid);
+    api->seqid = g_strdup(str);
 
+    if (G_UNLIKELY(api->stoken == NULL)) {
+        fb_api_sync_create_queue(api);
         goto finish;
     }
 
@@ -710,6 +730,7 @@ void fb_api_free(fb_api_t *api)
     fb_mqtt_free(api->mqtt);
     fb_http_free(api->http);
 
+    g_free(api->seqid);
     g_free(api->cuid);
     g_free(api->mid);
     g_free(api->cid);
