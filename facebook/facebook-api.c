@@ -22,6 +22,8 @@
 #include "facebook-api.h"
 #include "facebook-thrift.h"
 
+static void fb_api_sync_create_queue(fb_api_t *api);
+
 /**
  * Gets the error domain for #fb_api.
  *
