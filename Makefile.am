@@ -1,2 +1,3 @@
-SUBDIRS    = facebook
-EXTRA_DIST = autogen.sh
+ACLOCAL_AMFLAGS = -Im4
+EXTRA_DIST      = autogen.sh
+SUBDIRS         = facebook
