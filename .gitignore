@@ -6,9 +6,9 @@
 .libs
 aclocal.m4
 autom4te.cache
+build-aux
 config.log
 config.status
-config
 configure
 INSTALL
 libtool

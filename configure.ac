@@ -22,7 +22,7 @@ AC_INIT(
     []
 )
 
-AC_CONFIG_AUX_DIR([config])
+AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_MACRO_DIR([m4])
 AM_INIT_AUTOMAKE([no-define])
 
