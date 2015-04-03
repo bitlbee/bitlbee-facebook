@@ -535,6 +535,10 @@ static void fb_logout(struct im_connection *ic)
 {
     fb_data_t *fata = ic->proto_data;
 
+    if (fata->api->stoken == NULL) {
+        set_reset(&ic->acc->set, "stoken");
+    }
+
     fb_api_disconnect(fata->api);
     fb_data_free(fata);
 }

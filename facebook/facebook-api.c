@@ -72,6 +72,13 @@ static gboolean fb_api_json_new(fb_api_t *api, const gchar *data, gsize size,
         json_value_free(jv);
         return FALSE;
     } else if (fb_json_str_chk(jv, "errorCode", &msg)) {
+        if ((g_ascii_strcasecmp(msg, "ERROR_QUEUE_NOT_FOUND") == 0) ||
+            (g_ascii_strcasecmp(msg, "ERROR_QUEUE_LOST") == 0))
+        {
+            g_free(api->stoken);
+            api->stoken = NULL;
+        }
+
         fb_api_error(api, FB_API_ERROR_GENERAL, "%s", msg);
         json_value_free(jv);
         return FALSE;
@@ -308,7 +315,7 @@ static void fb_api_cb_seqid(fb_http_req_t *req, gpointer data)
         goto finish;
     }
 
-    if (G_UNLIKELY(api->stoken == NULL)) {
+    if (api->stoken == NULL) {
         fb_api_publish(api, "/messenger_sync_create_queue", "{"
                 "\"device_params\":{},"
                 "\"encoding\":\"JSON\","
