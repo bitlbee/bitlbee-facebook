@@ -10,6 +10,7 @@ build-aux
 config.log
 config.status
 configure
+debian
 INSTALL
 libtool
 libtool.m4

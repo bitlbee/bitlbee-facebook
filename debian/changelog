@@ -1,0 +1,5 @@
+bitlbee-facebook (0.1-1) UNRELEASED; urgency=medium
+
+  * Initial debian packaging test.
+
+ -- dequis <dx@dxzone.com.ar>  Wed, 29 Apr 2015 01:20:07 -0300
