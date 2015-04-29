@@ -1,0 +1,11 @@
+Source: bitlbee-facebook
+Maintainer: jgeboski <jgeboski@gmail.com>
+Section: misc
+Priority: optional
+Standards-Version: 3.9.2
+Build-Depends: debhelper (>= 9), libglib2.0-dev (>= 2.32), bitlbee-dev (>= 3.2.2), zlib1g-dev
+
+Package: bitlbee-facebook
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}, bitlbee (>= 3.2.2)
+Description: Facebook protocol plugin for BitlBee
