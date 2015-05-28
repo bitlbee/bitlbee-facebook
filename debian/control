@@ -7,5 +7,5 @@ Build-Depends: debhelper (>= 9), libglib2.0-dev (>= 2.32), bitlbee-dev (>= 3.2.2
 
 Package: bitlbee-facebook
 Architecture: any
-Depends: ${shlibs:Depends}, ${misc:Depends}, bitlbee (>= 3.2.2)
+Depends: ${shlibs:Depends}, ${misc:Depends}, bitlbee (>= 3.2.2) | bitlbee-libpurple (>= 3.2.2)
 Description: Facebook protocol plugin for BitlBee
