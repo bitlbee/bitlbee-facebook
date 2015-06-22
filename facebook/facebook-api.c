@@ -445,6 +445,7 @@ static void fb_api_cb_publish_ms(fb_api_t *api, const GByteArray *pload)
 {
     GSList       *msgs;
     fb_api_msg_t  msg;
+    fb_thrift_t  *thft;
     json_value   *json;
     json_value   *jv;
     json_value   *jx;
@@ -454,8 +455,14 @@ static void fb_api_cb_publish_ms(fb_api_t *api, const GByteArray *pload)
     gint64        in;
     guint         i;
 
-    /* Start at 1 to skip the NULL byte */
-    if (!fb_api_json_new(api, (gchar*) pload->data + 1, pload->len - 1, &json))
+    thft = fb_thrift_new((GByteArray*) pload, 0, TRUE);
+    fb_thrift_read_str(thft, NULL);
+    i = thft->pos;
+    fb_thrift_free(thft);
+
+    g_return_if_fail(i < pload->len);
+
+    if (!fb_api_json_new(api, (gchar*) pload->data + i, pload->len - i, &json))
         return;
 
     msgs = NULL;
