@@ -422,13 +422,19 @@ gboolean fb_thrift_read_vi64(fb_thrift_t *thft, guint64 *u64)
  **/
 gboolean fb_thrift_read_str(fb_thrift_t *thft, gchar **str)
 {
-    gint32  size;
-    guint8 *data;
+    guint32   size;
+    guint8   *data;
+    gboolean  res;
 
     if (str != NULL)
         *str = NULL;
 
-    if (!fb_thrift_read_i32(thft, &size))
+    if (thft->flags & FB_THRIFT_FLAG_COMPACT)
+        res = fb_thrift_read_vi32(thft, &size);
+    else
+        res = fb_thrift_read_i32(thft, (gint32*) &size);
+
+    if (!res)
         return FALSE;
 
     if (str != NULL) {
@@ -883,7 +889,12 @@ void fb_thrift_write_str(fb_thrift_t *thft, const gchar *str)
     g_return_if_fail(str != NULL);
 
     size = strlen(str);
-    fb_thrift_write_vi32(thft, size);
+
+    if (thft->flags & FB_THRIFT_FLAG_COMPACT)
+        fb_thrift_write_vi32(thft, size);
+    else
+        fb_thrift_write_i32(thft, size);
+
     fb_thrift_write(thft, str, size);
 }
 
