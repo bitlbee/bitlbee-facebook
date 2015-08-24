@@ -15,343 +15,640 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <inttypes.h>
+#include <stdarg.h>
 #include <string.h>
 
 #include "facebook-json.h"
+#include "facebook-util.h"
 
-/**
- * Gets the error domain for the JSON parser.
- *
- * @return The #GQuark of the error domain.
- **/
-GQuark fb_json_error_quark(void)
+typedef struct _FbJsonValue FbJsonValue;
+
+struct _FbJsonValue
 {
-    static GQuark q;
+    const gchar *expr;
+    FbJsonType type;
+    gboolean required;
+    GValue value;
+};
 
-    if (G_UNLIKELY(q == 0))
+struct _FbJsonValuesPrivate
+{
+    JsonNode *root;
+    GQueue *queue;
+    GList *next;
+
+    gboolean isarray;
+    JsonArray *array;
+    guint index;
+
+    GError *error;
+};
+
+G_DEFINE_TYPE(FbJsonValues, fb_json_values, G_TYPE_OBJECT);
+
+static void
+fb_json_values_dispose(GObject *obj)
+{
+    FbJsonValue *value;
+    FbJsonValuesPrivate *priv = FB_JSON_VALUES(obj)->priv;
+
+    while (!g_queue_is_empty(priv->queue)) {
+        value = g_queue_pop_head(priv->queue);
+
+        if (G_IS_VALUE(&value->value)) {
+            g_value_unset(&value->value);
+        }
+
+        g_free(value);
+    }
+
+    if (priv->array != NULL) {
+        json_array_unref(priv->array);
+    }
+
+    if (priv->error != NULL) {
+        g_error_free(priv->error);
+    }
+
+    g_queue_free(priv->queue);
+}
+
+static void
+fb_json_values_class_init(FbJsonValuesClass *klass)
+{
+    GObjectClass *gklass = G_OBJECT_CLASS(klass);
+
+    gklass->dispose = fb_json_values_dispose;
+    g_type_class_add_private(klass, sizeof (FbJsonValuesPrivate));
+}
+
+static void
+fb_json_values_init(FbJsonValues *values)
+{
+    FbJsonValuesPrivate *priv;
+
+    priv = G_TYPE_INSTANCE_GET_PRIVATE(values, FB_TYPE_JSON_VALUES,
+                                       FbJsonValuesPrivate);
+    values->priv = priv;
+
+    priv->queue = g_queue_new();
+}
+
+GQuark
+fb_json_error_quark(void)
+{
+    static GQuark q = 0;
+
+    if (G_UNLIKELY(q == 0)) {
         q = g_quark_from_static_string("fb-json-error-quark");
+    }
 
     return q;
 }
 
-/**
- * Creates a new #json_value from JSON data. The returned #json_value
- * should be freed with #json_value_free() when no longer needed.
- *
- * @param data   The JSON data.
- * @param length The length of the JSON data.
- * @param err    The return location for a GError or NULL.
- *
- * @return The #json_value or NULL on error.
- **/
-json_value *fb_json_new(const gchar *data, gsize length, GError **err)
+JsonBuilder *
+fb_json_bldr_new(JsonNodeType type)
 {
-    json_value    *json;
-    json_settings  js;
-    gchar         *estr;
-    gchar         *dstr;
-    gchar         *escaped;
+    JsonBuilder *bldr;
 
-    memset(&js, 0, sizeof js);
-    estr = g_new0(gchar, json_error_max);
-    json = json_parse_ex(&js, data, length, estr);
+    bldr = json_builder_new();
 
-    if ((json != NULL) && (strlen(estr) < 1)) {
-        g_free(estr);
-        return json;
-    }
+    switch (type) {
+    case JSON_NODE_ARRAY:
+        fb_json_bldr_arr_begin(bldr, NULL);
+        break;
 
-    /* Ensure it's null-terminated before passing it to g_strescape() */
-    dstr = g_strndup(data, MIN(length, 400));
-    escaped = g_strescape(dstr, "\"");
-
-    g_set_error(err, FB_JSON_ERROR, FB_JSON_ERROR_PARSER,
-                "Parser: %s\nJSON len=%zd: %s", estr, length, escaped);
-
-    g_free(dstr);
-    g_free(escaped);
-
-    g_free(estr);
-    return NULL;
-}
-
-/**
- * Gets the string representation of a #json_value. The returned string
- * should be freed with #g_free() when no longer needed.
- *
- * @param json The #json_value.
- *
- * @return The resulting string, or NULL on error.
- **/
-gchar *fb_json_valstr(const json_value *json)
-{
-    g_return_val_if_fail(json != NULL, NULL);
-
-    switch (json->type) {
-    case json_integer:
-        return g_strdup_printf("%" PRId64, json->u.integer);
-
-    case json_double:
-        return g_strdup_printf("%f", json->u.dbl);
-
-    case json_string:
-        return g_strdup(json->u.string.ptr);
-
-    case json_boolean:
-        return g_strdup(json->u.boolean ? "true" : "false");
-
-    case json_null:
-        return g_strdup("null");
+    case JSON_NODE_OBJECT:
+        fb_json_bldr_obj_begin(bldr, NULL);
+        break;
 
     default:
+        break;
+    }
+
+    return bldr;
+}
+
+gchar *
+fb_json_bldr_close(JsonBuilder *bldr, JsonNodeType type, gsize *size)
+{
+    gchar *ret;
+    JsonGenerator *genr;
+    JsonNode *root;
+
+    switch (type) {
+    case JSON_NODE_ARRAY:
+        fb_json_bldr_arr_end(bldr);
+        break;
+
+    case JSON_NODE_OBJECT:
+        fb_json_bldr_obj_end(bldr);
+        break;
+
+    default:
+        break;
+    }
+
+    genr = json_generator_new();
+    root = json_builder_get_root(bldr);
+
+    json_generator_set_root(genr, root);
+    ret = json_generator_to_data(genr, size);
+
+    json_node_free(root);
+    g_object_unref(genr);
+    g_object_unref(bldr);
+
+    return ret;
+}
+
+void
+fb_json_bldr_arr_begin(JsonBuilder *bldr, const gchar *name)
+{
+    if (name != NULL) {
+        json_builder_set_member_name(bldr, name);
+    }
+
+    json_builder_begin_array(bldr);
+}
+
+void
+fb_json_bldr_arr_end(JsonBuilder *bldr)
+{
+    json_builder_end_array(bldr);
+}
+
+void
+fb_json_bldr_obj_begin(JsonBuilder *bldr, const gchar *name)
+{
+    if (name != NULL) {
+        json_builder_set_member_name(bldr, name);
+    }
+
+    json_builder_begin_object(bldr);
+}
+
+void
+fb_json_bldr_obj_end(JsonBuilder *bldr)
+{
+    json_builder_end_object(bldr);
+}
+
+void
+fb_json_bldr_add_bool(JsonBuilder *bldr, const gchar *name, gboolean value)
+{
+    if (name != NULL) {
+        json_builder_set_member_name(bldr, name);
+    }
+
+    json_builder_add_boolean_value(bldr, value);
+}
+
+void
+fb_json_bldr_add_dbl(JsonBuilder *bldr, const gchar *name, gdouble value)
+{
+    if (name != NULL) {
+        json_builder_set_member_name(bldr, name);
+    }
+
+    json_builder_add_double_value(bldr, value);
+}
+
+void
+fb_json_bldr_add_int(JsonBuilder *bldr, const gchar *name, gint64 value)
+{
+    if (name != NULL) {
+        json_builder_set_member_name(bldr, name);
+    }
+
+    json_builder_add_int_value(bldr, value);
+}
+
+void
+fb_json_bldr_add_str(JsonBuilder *bldr, const gchar *name, const gchar *value)
+{
+    if (name != NULL) {
+        json_builder_set_member_name(bldr, name);
+    }
+
+    json_builder_add_string_value(bldr, value);
+}
+
+void
+fb_json_bldr_add_strf(JsonBuilder *bldr, const gchar *name,
+                      const gchar *format, ...)
+{
+    gchar *value;
+    va_list ap;
+
+    va_start(ap, format);
+    value = g_strdup_vprintf(format, ap);
+    va_end(ap);
+
+    fb_json_bldr_add_str(bldr, name, value);
+    g_free(value);
+}
+
+JsonNode *
+fb_json_node_new(const gchar *data, gssize size, GError **error)
+{
+    JsonNode *root;
+    JsonParser *prsr;
+
+    prsr = json_parser_new();
+
+    if (!json_parser_load_from_data(prsr, data, size, error)) {
+        g_object_unref(prsr);
         return NULL;
     }
+
+    root = json_parser_get_root(prsr);
+    root = json_node_copy(root);
+
+    g_object_unref(prsr);
+    return root;
 }
 
-/**
- * Gets a #json_value by name from a parent #json_value.
- *
- * @param json The #json_value.
- * @param name The name.
- * @param type The #json_type.
- *
- * @return The json_value if found, otherwise NULL.
- **/
-json_value *fb_json_val(const json_value *json, const gchar *name,
-                        json_type type)
+JsonNode *
+fb_json_node_get(JsonNode *root, const gchar *expr, GError **error)
 {
-    json_value *val;
+    GError *err = NULL;
+    guint size;
+    JsonArray *rslt;
+    JsonNode *node;
+    JsonNode *ret;
 
-    if (!fb_json_val_chk(json, name, type, &val))
+    node = json_path_query(expr, root, &err);
+
+    if (err != NULL) {
+        g_propagate_error(error, err);
+        json_node_free(node);
         return NULL;
+    }
 
-    return val;
+    rslt = json_node_get_array(node);
+    size = json_array_get_length(rslt);
+
+    if (size < 1) {
+        g_set_error(error, FB_JSON_ERROR, FB_JSON_ERROR_NOMATCH,
+                    "No matches for %s", expr);
+        json_node_free(node);
+        return NULL;
+    }
+
+    if (size > 1) {
+        g_set_error(error, FB_JSON_ERROR, FB_JSON_ERROR_AMBIGUOUS,
+                    "Ambiguous matches for %s", expr);
+        json_node_free(node);
+        return NULL;
+    }
+
+    if (json_array_get_null_element(rslt, 0)) {
+        g_set_error(error, FB_JSON_ERROR, FB_JSON_ERROR_NULL,
+                    "Null value for %s", expr);
+        json_node_free(node);
+        return NULL;
+    }
+
+    ret = json_array_dup_element(rslt, 0);
+    json_node_free(node);
+    return ret;
 }
 
-/**
- * Gets a #json_value by name from a parent #json_value, and checks
- * for its existence and type.
- *
- * @param json The #json_value.
- * @param name The name.
- * @param type The #json_type.
- * @param val  The return location for the value.
- *
- * @return TRUE if the value was found, or FALSE on error.
- **/
-gboolean fb_json_val_chk(const json_value *json, const gchar *name,
-                         json_type type, json_value **val)
+JsonNode *
+fb_json_node_get_nth(JsonNode *root, guint n)
 {
-    g_return_val_if_fail(json != NULL, FALSE);
-    g_return_val_if_fail(name != NULL, FALSE);
-    g_return_val_if_fail(val  != NULL, FALSE);
+    GList *vals;
+    JsonNode *ret;
+    JsonObject *obj;
 
-    *val = json_o_get(json, name);
+    obj = json_node_get_object(root);
+    vals = json_object_get_values(obj);
+    ret = g_list_nth_data(vals, n);
 
-    if ((*val == NULL) || ((*val)->type != type)) {
-        *val = NULL;
+    g_list_free(vals);
+    return ret;
+}
+
+JsonArray *
+fb_json_node_get_arr(JsonNode *root, const gchar *expr, GError **error)
+{
+    JsonArray *ret;
+    JsonNode *rslt;
+
+    rslt = fb_json_node_get(root, expr, error);
+
+    if (rslt == NULL) {
+        return NULL;
+    }
+
+    ret = json_node_dup_array(rslt);
+    json_node_free(rslt);
+    return ret;
+}
+
+gboolean
+fb_json_node_get_bool(JsonNode *root, const gchar *expr, GError **error)
+{
+    gboolean ret;
+    JsonNode *rslt;
+
+    rslt = fb_json_node_get(root, expr, error);
+
+    if (rslt == NULL) {
         return FALSE;
     }
 
-    return TRUE;
+    ret = json_node_get_boolean(rslt);
+    json_node_free(rslt);
+    return ret;
 }
 
-/**
- * Gets an array by name from a parent #json_value.
- *
- * @param json The #json_value.
- * @param name The name.
- *
- * @return The #json_value if found, otherwise NULL.
- **/
-json_value *fb_json_array(const json_value *json, const gchar *name)
+gdouble
+fb_json_node_get_dbl(JsonNode *root, const gchar *expr, GError **error)
 {
-    json_value *val;
+    gdouble ret;
+    JsonNode *rslt;
 
-    if (!fb_json_array_chk(json, name, &val))
-        return NULL;
+    rslt = fb_json_node_get(root, expr, error);
 
-    return val;
-}
-
-/**
- * Gets an array by name from a parent #json_value, and checks for its
- * existence and type.
- *
- * @param json The #json_value.
- * @param name The name.
- * @param type The #json_type.
- * @param val  The return location for the value.
- *
- * @return TRUE if the value was found, or FALSE on error.
- **/
-gboolean fb_json_array_chk(const json_value *json, const gchar *name,
-                              json_value **val)
-{
-    return fb_json_val_chk(json, name, json_array, val);
-}
-
-/**
- * Gets a boolean value by name from a parent #json_value.
- *
- * @param json The #json_value.
- * @param name The name.
- *
- * @return The boolean value if found, otherwise FALSE.
- **/
-gboolean fb_json_bool(const json_value *json, const gchar *name)
-{
-    gboolean val;
-
-    if (!fb_json_bool_chk(json, name, &val))
-        return FALSE;
-
-    return val;
-}
-
-/**
- * Gets a boolean value by name from a parent #json_value, and checks
- * for its existence and type.
- *
- * @param json The #json_value.
- * @param name The name.
- * @param val  The return location for the value.
- *
- * @return The boolean value if found, otherwise FALSE.
- **/
-gboolean fb_json_bool_chk(const json_value *json, const gchar *name,
-                          gboolean *val)
-{
-    json_value *jv;
-
-    g_return_val_if_fail(val != NULL, FALSE);
-
-    if (!fb_json_val_chk(json, name, json_boolean, &jv)) {
-        *val = FALSE;
-        return FALSE;
+    if (rslt == NULL) {
+        return 0.0;
     }
 
-    *val = jv->u.boolean;
-    return TRUE;
+    ret = json_node_get_double(rslt);
+    json_node_free(rslt);
+    return ret;
 }
 
-/**
- * Gets a integer value by name from a parent #json_value.
- *
- * @param json The #json_value.
- * @param name The name.
- *
- * @return The integer value if found, otherwise 0.
- **/
-gint64 fb_json_int(const json_value *json, const gchar *name)
+gint64
+fb_json_node_get_int(JsonNode *root, const gchar *expr, GError **error)
 {
-    gint64 val;
+    gint64 ret;
+    JsonNode *rslt;
 
-    if (!fb_json_int_chk(json, name, &val))
+    rslt = fb_json_node_get(root, expr, error);
+
+    if (rslt == NULL) {
         return 0;
-
-    return val;
-}
-
-/**
- * Gets a integer value by name from a parent #json_value, and checks
- * for its existence and type.
- *
- * @param json The #json_value.
- * @param name The name.
- * @param val  The return location for the value.
- *
- * @return TRUE if the value was found, or FALSE on error.
- **/
-gboolean fb_json_int_chk(const json_value *json, const gchar *name,
-                         gint64 *val)
-{
-    json_value *jv;
-
-    g_return_val_if_fail(val != NULL, FALSE);
-
-    if (!fb_json_val_chk(json, name, json_integer, &jv)) {
-        *val = 0;
-        return FALSE;
     }
 
-    *val = jv->u.integer;
-    return TRUE;
+    ret = json_node_get_int(rslt);
+    json_node_free(rslt);
+    return ret;
 }
 
-/**
- * Gets a string value by name from a parent #json_value.
- *
- * @param json The #json_value.
- * @param name The name.
- *
- * @return The string value if found, otherwise NULL.
- **/
-const gchar *fb_json_str(const json_value *json, const gchar *name)
+gchar *
+fb_json_node_get_str(JsonNode *root, const gchar *expr, GError **error)
 {
-    const gchar *val;
+    gchar *ret;
+    JsonNode *rslt;
 
-    if (!fb_json_str_chk(json, name, &val))
+    rslt = fb_json_node_get(root, expr, error);
+
+    if (rslt == NULL) {
         return NULL;
+    }
 
-    return val;
+    ret = json_node_dup_string(rslt);
+    json_node_free(rslt);
+    return ret;
 }
 
-/**
- * Gets a string value by name from a parent #json_value, and checks
- * for its existence and type.
- *
- * @param json The #json_value.
- * @param name The name.
- * @param val  The return location for the value.
- *
- * @return TRUE if the value was found, or FALSE on error.
- **/
-gboolean fb_json_str_chk(const json_value *json, const gchar *name,
-                         const gchar **val)
+FbJsonValues *
+fb_json_values_new(JsonNode *root)
 {
-    json_value *jv;
+    FbJsonValues *values;
+    FbJsonValuesPrivate *priv;
 
-    g_return_val_if_fail(val != NULL, FALSE);
+    g_return_val_if_fail(root != NULL, NULL);
 
-    if (!fb_json_val_chk(json, name, json_string, &jv)) {
-        *val = NULL;
+    values = g_object_new(FB_TYPE_JSON_VALUES, NULL);
+    priv = values->priv;
+    priv->root = root;
+
+    return values;
+}
+
+void
+fb_json_values_add(FbJsonValues *values, FbJsonType type, gboolean required,
+                   const gchar *expr)
+{
+    FbJsonValue *value;
+    FbJsonValuesPrivate *priv;
+
+    g_return_if_fail(values != NULL);
+    g_return_if_fail(expr != NULL);
+    priv = values->priv;
+
+    value = g_new0(FbJsonValue, 1);
+    value->expr = expr;
+    value->type = type;
+    value->required = required;
+
+    g_queue_push_tail(priv->queue, value);
+}
+
+JsonNode *
+fb_json_values_get_root(FbJsonValues *values)
+{
+    FbJsonValuesPrivate *priv;
+    guint index;
+
+    g_return_val_if_fail(values != NULL, NULL);
+    priv = values->priv;
+
+    if (priv->array == NULL) {
+        return priv->root;
+    }
+
+    g_return_val_if_fail(priv->index > 0, NULL);
+    index = priv->index - 1;
+
+    if (json_array_get_length(priv->array) <= index) {
+        return NULL;
+    }
+
+    return json_array_get_element(priv->array, index);
+}
+
+void
+fb_json_values_set_array(FbJsonValues *values, gboolean required,
+                         const gchar *expr)
+{
+    FbJsonValuesPrivate *priv;
+
+    g_return_if_fail(values != NULL);
+    priv = values->priv;
+
+    priv->array = fb_json_node_get_arr(priv->root, expr, &priv->error);
+    priv->isarray = TRUE;
+
+    if ((priv->error != NULL) && !required) {
+        g_clear_error(&priv->error);
+    }
+}
+
+gboolean
+fb_json_values_update(FbJsonValues *values, GError **error)
+{
+    FbJsonValue *value;
+    FbJsonValuesPrivate *priv;
+    GError *err = NULL;
+    GList *l;
+    GType type;
+    JsonNode *root;
+    JsonNode *node;
+
+    g_return_val_if_fail(values != NULL, FALSE);
+    priv = values->priv;
+
+    if (G_UNLIKELY(priv->error != NULL)) {
+        g_propagate_error(error, priv->error);
+        priv->error = NULL;
         return FALSE;
     }
 
-    *val = jv->u.string.ptr;
-    return TRUE;
-}
+    if (priv->isarray) {
+        if ((priv->array == NULL) ||
+            (json_array_get_length(priv->array) <= priv->index))
+        {
+            return FALSE;
+        }
 
-/**
- * Backslash-escapes a string to make it safe for json. The returned string
- * should be freed with #g_free() when no longer needed.
- *
- * @param str The string to escape.
- *
- * @return The resulting string, or NULL on error.
- **/
-gchar *fb_json_str_escape(const gchar *str)
-{
-    GString *out;
-    guint    i;
+        root = json_array_get_element(priv->array, priv->index++);
+    } else {
+        root = priv->root;
+    }
 
-    g_return_val_if_fail(str != NULL, NULL);
+    g_return_val_if_fail(root != NULL, FALSE);
 
-    /* let's overallocate a bit */
-    out = g_string_sized_new(strlen(str) * 2);
+    for (l = priv->queue->head; l != NULL; l = l->next) {
+        value = l->data;
+        node = fb_json_node_get(root, value->expr, &err);
 
-    for (i = 0; str[i] != '\0'; i++) {
-        if ((str[i] > 0) && (str[i] < 0x20)) {
-            g_string_append_printf(out, "\\u%04x", str[i]);
+        if (G_IS_VALUE(&value->value)) {
+            g_value_unset(&value->value);
+        }
+
+        if (err != NULL) {
+            json_node_free(node);
+
+            if (value->required) {
+                g_propagate_error(error, err);
+                return FALSE;
+            }
+
+            g_clear_error(&err);
             continue;
         }
-        if ((str[i] == '"') || (str[i] == '\\')) {
-            g_string_append_c(out, '\\');
+
+        type = json_node_get_value_type(node);
+
+        if (G_UNLIKELY(type != value->type)) {
+            g_set_error(error, FB_JSON_ERROR, FB_JSON_ERROR_TYPE,
+                        "Expected a %s but got a %s for %s",
+                        g_type_name(value->type),
+                        g_type_name(type),
+                        value->expr);
+            json_node_free(node);
+            return FALSE;
         }
-        g_string_append_c(out, str[i]);
+
+        json_node_get_value(node, &value->value);
+        json_node_free(node);
     }
 
-    return g_string_free(out, FALSE);
+    priv->next = priv->queue->head;
+    return TRUE;
+}
+
+const GValue *
+fb_json_values_next(FbJsonValues *values)
+{
+    FbJsonValue *value;
+    FbJsonValuesPrivate *priv;
+
+    g_return_val_if_fail(values != NULL, NULL);
+    priv = values->priv;
+
+    g_return_val_if_fail(priv->next != NULL, NULL);
+    value = priv->next->data;
+    priv->next = priv->next->next;
+
+    if (!G_IS_VALUE(&value->value)) {
+        return NULL;
+    }
+
+    return &value->value;
+}
+
+gboolean
+fb_json_values_next_bool(FbJsonValues *values, gboolean defval)
+{
+    const GValue *value;
+
+    value = fb_json_values_next(values);
+
+    if (G_UNLIKELY(value == NULL)) {
+        return defval;
+    }
+
+    return g_value_get_boolean(value);
+}
+
+gdouble
+fb_json_values_next_dbl(FbJsonValues *values, gdouble defval)
+{
+    const GValue *value;
+
+    value = fb_json_values_next(values);
+
+    if (G_UNLIKELY(value == NULL)) {
+        return defval;
+    }
+
+    return g_value_get_double(value);
+}
+
+gint64
+fb_json_values_next_int(FbJsonValues *values, gint64 defval)
+{
+    const GValue *value;
+
+    value = fb_json_values_next(values);
+
+    if (G_UNLIKELY(value == NULL)) {
+        return defval;
+    }
+
+    return g_value_get_int64(value);
+}
+
+const gchar *
+fb_json_values_next_str(FbJsonValues *values, const gchar *defval)
+{
+    const GValue *value;
+
+    value = fb_json_values_next(values);
+
+    if (G_UNLIKELY(value == NULL)) {
+        return defval;
+    }
+
+    return g_value_get_string(value);
+}
+
+gchar *
+fb_json_values_next_str_dup(FbJsonValues *values, const gchar *defval)
+{
+    const GValue *value;
+
+    value = fb_json_values_next(values);
+
+    if (G_UNLIKELY(value == NULL)) {
+        return g_strdup(defval);
+    }
+
+    return g_value_dup_string(value);
 }

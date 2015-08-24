@@ -21,317 +21,405 @@
 #include <stdarg.h>
 #include <string.h>
 
+#include "facebook-marshal.h"
 #include "facebook-mqtt.h"
+#include "facebook-util.h"
 
-/**
- * Gets the error domain for #fb_mqtt.
- *
- * @return The #GQuark of the error domain.
- **/
-GQuark fb_mqtt_error_quark(void)
+struct _FbMqttPrivate
 {
-    static GQuark q;
+    gpointer ssl;
+    gboolean connected;
+    guint16 mid;
 
-    if (G_UNLIKELY(q == 0))
+    GByteArray *rbuf;
+    GByteArray *wbuf;
+    gsize remz;
+
+    gint tev;
+    gint rev;
+    gint wev;
+};
+
+struct _FbMqttMessagePrivate
+{
+    FbMqttMessageType type;
+    FbMqttMessageFlags flags;
+
+    GByteArray *bytes;
+    guint offset;
+    guint pos;
+
+    gboolean local;
+};
+
+G_DEFINE_TYPE(FbMqtt, fb_mqtt, G_TYPE_OBJECT);
+G_DEFINE_TYPE(FbMqttMessage, fb_mqtt_message, G_TYPE_OBJECT);
+
+static void
+fb_mqtt_dispose(GObject *obj)
+{
+    FbMqtt *mqtt = FB_MQTT(obj);
+    FbMqttPrivate *priv = mqtt->priv;
+
+    fb_mqtt_close(mqtt);
+    g_byte_array_free(priv->rbuf, TRUE);
+    g_byte_array_free(priv->wbuf, TRUE);
+}
+
+static void
+fb_mqtt_class_init(FbMqttClass *klass)
+{
+    GObjectClass *gklass = G_OBJECT_CLASS(klass);
+
+    gklass->dispose = fb_mqtt_dispose;
+    g_type_class_add_private(klass, sizeof (FbMqttPrivate));
+
+    /**
+     * FbMqtt::connect:
+     * @mqtt: The #FbMqtt.
+     *
+     * Emitted upon the successful completion of the connection
+     * process. This is emitted as a result of #fb_mqtt_connect().
+     */
+    g_signal_new("connect",
+                 G_TYPE_FROM_CLASS(klass),
+                 G_SIGNAL_ACTION,
+                 0,
+                 NULL, NULL,
+                 fb_marshal_VOID__VOID,
+                 G_TYPE_NONE,
+                 0);
+
+    /**
+     * FbMqtt::error:
+     * @mqtt: The #FbMqtt.
+     * @error: The #GError.
+     *
+     * Emitted whenever an error is hit within the #FbMqtt. This should
+     * close the #FbMqtt with #fb_mqtt_close().
+     */
+    g_signal_new("error",
+                 G_TYPE_FROM_CLASS(klass),
+                 G_SIGNAL_ACTION,
+                 0,
+                 NULL, NULL,
+                 fb_marshal_VOID__OBJECT,
+                 G_TYPE_NONE,
+                 1, G_TYPE_ERROR);
+
+    /**
+     * FbMqtt::open:
+     * @mqtt: The #FbMqtt.
+     *
+     * Emitted upon the successful opening of the remote socket.
+     * This is emitted as a result of #fb_mqtt_open(). This should
+     * call #fb_mqtt_connect().
+     */
+    g_signal_new("open",
+                 G_TYPE_FROM_CLASS(klass),
+                 G_SIGNAL_ACTION,
+                 0,
+                 NULL, NULL,
+                 fb_marshal_VOID__VOID,
+                 G_TYPE_NONE,
+                 0);
+
+    /**
+     * FbMqtt::publish:
+     * @mqtt: The #FbMqtt.
+     * @topic: The topic.
+     * @pload: The payload.
+     *
+     * Emitted upon an incoming message from the steam.
+     */
+    g_signal_new("publish",
+                 G_TYPE_FROM_CLASS(klass),
+                 G_SIGNAL_ACTION,
+                 0,
+                 NULL, NULL,
+                 fb_marshal_VOID__STRING_BOXED,
+                 G_TYPE_NONE,
+                 2, G_TYPE_STRING, G_TYPE_BYTE_ARRAY);
+}
+
+static void
+fb_mqtt_init(FbMqtt *mqtt)
+{
+    FbMqttPrivate *priv;
+
+    priv = G_TYPE_INSTANCE_GET_PRIVATE(mqtt, FB_TYPE_MQTT, FbMqttPrivate);
+    mqtt->priv = priv;
+
+    priv->rbuf = g_byte_array_new();
+    priv->wbuf = g_byte_array_new();
+}
+
+static void
+fb_mqtt_message_dispose(GObject *obj)
+{
+    FbMqttMessagePrivate *priv = FB_MQTT_MESSAGE(obj)->priv;
+
+    if ((priv->bytes != NULL) && priv->local) {
+        g_byte_array_free(priv->bytes, TRUE);
+    }
+}
+
+static void
+fb_mqtt_message_class_init(FbMqttMessageClass *klass)
+{
+    GObjectClass *gklass = G_OBJECT_CLASS(klass);
+
+    gklass->dispose = fb_mqtt_message_dispose;
+    g_type_class_add_private(klass, sizeof (FbMqttMessagePrivate));
+}
+
+static void
+fb_mqtt_message_init(FbMqttMessage *msg)
+{
+    FbMqttMessagePrivate *priv;
+
+    priv = G_TYPE_INSTANCE_GET_PRIVATE(msg, FB_TYPE_MQTT_MESSAGE,
+                                       FbMqttMessagePrivate);
+    msg->priv = priv;
+}
+
+GQuark
+fb_mqtt_error_quark(void)
+{
+    static GQuark q = 0;
+
+    if (G_UNLIKELY(q == 0)) {
         q = g_quark_from_static_string("fb-mqtt-error-quark");
+    }
 
     return q;
 }
 
-/**
- * Creates a new #fb_mqtt. The returned #fb_mqtt should be freed with
- * #fb_mqtt_free() when no longer needed.
- *
- * @param funcs The #fb_mqtt_funcs.
- * @param data  The user defined data or NULL.
- *
- * @return The #fb_mqtt or NULL on error.
- **/
-fb_mqtt_t *fb_mqtt_new(const fb_mqtt_funcs_t *funcs, gpointer data)
+GQuark
+fb_mqtt_ssl_error_quark(void)
 {
-    fb_mqtt_t *mqtt;
+    static GQuark q = 0;
 
-    mqtt = g_new0(fb_mqtt_t, 1);
-    memcpy(&mqtt->funcs, funcs, sizeof *funcs);
-    mqtt->data = data;
-    mqtt->rbuf = g_byte_array_new();
-    mqtt->wbuf = g_byte_array_new();
+    if (G_UNLIKELY(q == 0)) {
+        q = g_quark_from_static_string("fb-mqtt-ssl-error-quark");
+    }
 
-    return mqtt;
+    return q;
+}
+
+FbMqtt *
+fb_mqtt_new(void)
+{
+    return g_object_new(FB_TYPE_MQTT,  NULL);
 };
 
-/**
- * Frees all memory used by a #fb_mqtt.
- *
- * @param api The #fb_mqtt.
- **/
-void fb_mqtt_free(fb_mqtt_t *mqtt)
+void
+fb_mqtt_close(FbMqtt *mqtt)
 {
-    if (G_UNLIKELY(mqtt == NULL))
-        return;
+    FbMqttPrivate *priv;
 
-    fb_mqtt_close(mqtt);
-    g_clear_error(&mqtt->err);
+    g_return_if_fail(FB_IS_MQTT(mqtt));
+    priv = mqtt->priv;
 
-    g_byte_array_free(mqtt->wbuf, TRUE);
-    g_byte_array_free(mqtt->rbuf, TRUE);
+    if (priv->wev > 0) {
+        b_event_remove(priv->wev);
+        priv->wev = 0;
+    }
 
-    g_free(mqtt);
+    if (priv->rev > 0) {
+        b_event_remove(priv->rev);
+        priv->rev = 0;
+    }
+
+    if (priv->tev > 0) {
+        b_event_remove(priv->tev);
+        priv->tev = 0;
+    }
+
+    if (priv->ssl != NULL) {
+        ssl_disconnect(priv->ssl);
+        priv->ssl = NULL;
+    }
+
+    if (priv->wbuf->len > 0) {
+        fb_util_debug_warn("Closing with unwritten data");
+    }
+
+    priv->connected = FALSE;
+    g_byte_array_set_size(priv->rbuf, 0);
+    g_byte_array_set_size(priv->wbuf, 0);
 }
 
-/**
- * Closes the #fb_mqtt connection.
- *
- * @param mqtt The #fb_mqtt.
- **/
-void fb_mqtt_close(fb_mqtt_t *mqtt)
+void
+fb_mqtt_error(FbMqtt *mqtt, FbMqttError error, const gchar *format, ...)
 {
-    g_return_if_fail(mqtt != NULL);
+    GError *err;
+    va_list ap;
 
-    if (mqtt->wev > 0) {
-        b_event_remove(mqtt->wev);
-        mqtt->wev = 0;
-    }
+    g_return_if_fail(FB_IS_MQTT(mqtt));
 
-    if (mqtt->rev > 0) {
-        b_event_remove(mqtt->rev);
-        mqtt->rev = 0;
-    }
+    va_start(ap, format);
+    err = g_error_new_valist(FB_MQTT_ERROR, error, format, ap);
+    va_end(ap);
 
-    if (mqtt->tev > 0) {
-        b_event_remove(mqtt->tev);
-        mqtt->tev = 0;
-    }
-
-    if (mqtt->ssl != NULL) {
-        ssl_disconnect(mqtt->ssl);
-        mqtt->ssl = NULL;
-    }
-
-#ifdef DEBUG_FACEBOOK
-    if (mqtt->wbuf->len > 0)
-        FB_UTIL_DEBUGLN("Closing with unwritten data");
-#endif /* DEBUG_FACEBOOK */
-
-    mqtt->connected = FALSE;
-    g_clear_error(&mqtt->err);
-
-    g_byte_array_set_size(mqtt->rbuf, 0);
-    g_byte_array_set_size(mqtt->wbuf, 0);
+    g_signal_emit_by_name(mqtt, "error", err);
+    g_error_free(err);
 }
 
-/**
- * Handles an error with the #fb_mqtt. This sets #fb_mqtt->err, calls
- * the error function, and closes the connection.
- *
- * @param mqtt  The #fb_mqtt.
- * @param error The #fb_mqtt_error.
- * @param fmt   The format string.
- * @param ...   The arguments for the format string.
- **/
-void fb_mqtt_error(fb_mqtt_t *mqtt, fb_mqtt_error_t err, const gchar *fmt, ...)
+static gboolean
+fb_mqtt_cb_timeout(gpointer data, gint fd, b_input_condition cond)
 {
-    gchar   *str;
-    va_list  ap;
+    FbMqtt *mqtt = data;
+    FbMqttPrivate *priv = mqtt->priv;
 
-    g_return_if_fail(mqtt != NULL);
-
-    if (fmt != NULL) {
-        va_start(ap, fmt);
-        str = g_strdup_vprintf(fmt, ap);
-        va_end(ap);
-
-        g_clear_error(&mqtt->err);
-        g_set_error_literal(&mqtt->err, FB_MQTT_ERROR, err, str);
-        g_free(str);
-    }
-
-    if (mqtt->err != NULL)
-        FB_MQTT_FUNC(mqtt, error, mqtt->err);
-}
-
-/**
- * Implemented #b_event_handler for #fb_mqtt_timeout().
- *
- * @param data The user defined data, which is #fb_mqtt.
- * @param fd   The event file descriptor.
- * @param cond The #b_input_condition.
- *
- * @return FALSE to prevent continued event handling.
- **/
-static gboolean fb_mqtt_cb_timeout(gpointer data, gint fd,
-                                   b_input_condition cond)
-{
-    fb_mqtt_t *mqtt = data;
-
-    mqtt->tev = 0;
+    priv->tev = 0;
     fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL, "Connection timed out");
     return FALSE;
 }
 
-/**
- * Clears an enacted connection timeout.
- *
- * @param mqtt The #fb_mqtt.
- **/
-static void fb_mqtt_timeout_clear(fb_mqtt_t *mqtt)
+static void
+fb_mqtt_timeout_clear(FbMqtt *mqtt)
 {
-    g_return_if_fail(mqtt != NULL);
+    FbMqttPrivate *priv = mqtt->priv;
 
-    if (mqtt->tev > 0) {
-        b_event_remove(mqtt->tev);
-        mqtt->tev = 0;
+    if (priv->tev > 0) {
+        b_event_remove(priv->tev);
+        priv->tev = 0;
     }
 }
 
-/**
- * Enacts a timeout on the connection. This clears any timeout which
- * currently exists.
- *
- * @param mqtt The #fb_mqtt.
- **/
-static void fb_mqtt_timeout(fb_mqtt_t *mqtt)
+static void
+fb_mqtt_timeout(FbMqtt *mqtt)
 {
-    g_return_if_fail(mqtt != NULL);
+    FbMqttPrivate *priv = mqtt->priv;
 
     fb_mqtt_timeout_clear(mqtt);
-    mqtt->tev = b_timeout_add(FB_MQTT_TIMEOUT_CONN, fb_mqtt_cb_timeout, mqtt);
+    priv->tev = b_timeout_add(FB_MQTT_TIMEOUT_CONN, fb_mqtt_cb_timeout, mqtt);
 }
 
-/**
- * Implemented #b_event_handler for sending a PING request.
- *
- * @param data The user defined data, which is #fb_mqtt.
- * @param fd   The event file descriptor.
- * @param cond The #b_input_condition.
- *
- * @return FALSE to prevent continued event handling.
- **/
-static gboolean fb_mqtt_cb_ping(gpointer data, gint fd,
-                                b_input_condition cond)
+static gboolean
+fb_mqtt_cb_ping(gpointer data, gint fd, b_input_condition cond)
 {
-    fb_mqtt_t     *mqtt = data;
-    fb_mqtt_msg_t *msg;
+    FbMqtt *mqtt = data;
+    FbMqttMessage *msg;
+    FbMqttPrivate *priv = mqtt->priv;
 
-    msg = fb_mqtt_msg_new(FB_MQTT_MSG_TYPE_PINGREQ, 0);
+    msg = fb_mqtt_message_new(FB_MQTT_MESSAGE_TYPE_PINGREQ, 0);
     fb_mqtt_write(mqtt, msg);
-    fb_mqtt_msg_free(msg);
+    g_object_unref(msg);
 
-    mqtt->tev = 0;
+    priv->tev = 0;
     fb_mqtt_timeout(mqtt);
     return FALSE;
 }
 
-/**
- * Sends a PING after #FB_MQTT_KA seconds. This clears any timeout which
- * currently exists.
- *
- * @param mqtt The #fb_mqtt.
- **/
-static void fb_mqtt_ping(fb_mqtt_t *mqtt)
+static void
+fb_mqtt_ping(FbMqtt *mqtt)
 {
-    g_return_if_fail(mqtt != NULL);
+    FbMqttPrivate *priv = mqtt->priv;
 
     fb_mqtt_timeout_clear(mqtt);
-    mqtt->tev = b_timeout_add(FB_MQTT_TIMEOUT_PING, fb_mqtt_cb_ping, mqtt);
+    priv->tev = b_timeout_add(FB_MQTT_TIMEOUT_PING, fb_mqtt_cb_ping, mqtt);
 }
 
-/**
- * Implemented #b_event_handler for the read of #fb_mqtt->fd.
- *
- * @param data The user defined data, which is #fb_mqtt.
- * @param fd   The event file descriptor.
- * @param cond The #b_input_condition.
- *
- * @return TRUE for continued event handling, otherwise FALSE.
- **/
-static gboolean fb_mqtt_cb_read(gpointer data, gint fd,
-                                b_input_condition cond)
+static gboolean
+fb_mqtt_cb_read(gpointer data, gint fd, b_input_condition cond)
 {
-    fb_mqtt_t     *mqtt = data;
-    fb_mqtt_msg_t *msg;
-    gchar          buf[1024];
-    guint8         byte;
-    guint          mult;
-    gssize         rize;
-    gint           res;
+    FbMqtt *mqtt = data;
+    FbMqttMessage *msg;
+    FbMqttPrivate *priv = mqtt->priv;
+    gint res;
+    guint mult;
+    guint8 buf[1024];
+    guint8 byte;
+    gsize size;
+    gssize rize;
 
-    if (mqtt->remz < 1) {
+    if (priv->remz < 1) {
         /* Reset the read buffer */
-        g_byte_array_set_size(mqtt->rbuf, 0);
+        g_byte_array_set_size(priv->rbuf, 0);
 
-        res = ssl_read(mqtt->ssl, (gchar*) &byte, sizeof byte);
-        g_byte_array_append(mqtt->rbuf, &byte, sizeof byte);
+        res = ssl_read(priv->ssl, (gchar *) &byte, sizeof byte);
+        g_byte_array_append(priv->rbuf, &byte, sizeof byte);
 
-        if (res != sizeof byte)
-            goto error;
+        if (res != sizeof byte) {
+            fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
+                          "Failed to read fixed header");
+            return FALSE;
+        }
 
         mult = 1;
 
         do {
-            res = ssl_read(mqtt->ssl, (gchar*) &byte, sizeof byte);
-            g_byte_array_append(mqtt->rbuf, &byte, sizeof byte);
+            res = ssl_read(priv->ssl, (gchar *) &byte, sizeof byte);
+            g_byte_array_append(priv->rbuf, &byte, sizeof byte);
 
-            if (res != sizeof byte)
-                goto error;
+            if (res != sizeof byte) {
+                fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
+                              "Failed to read packet size");
+                return FALSE;
+            }
 
-            mqtt->remz += (byte & 127) * mult;
+            priv->remz += (byte & 127) * mult;
             mult *= 128;
         } while ((byte & 128) != 0);
     }
 
-    if (mqtt->remz > 0) {
-        rize = ssl_read(mqtt->ssl, buf, MIN(mqtt->remz, sizeof buf));
+    if (priv->remz > 0) {
+        size = MIN(priv->remz, sizeof buf);
+        rize = ssl_read(priv->ssl, (gchar *) buf, size);
 
-        if (rize < 1)
-            goto error;
+        if (rize < 1) {
+            fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
+                          "Failed to read packet data");
+            return FALSE;
+        }
 
-        g_byte_array_append(mqtt->rbuf, (guint8*) buf, rize);
-        mqtt->remz -= rize;
+        g_byte_array_append(priv->rbuf, buf, rize);
+        priv->remz -= rize;
     }
 
-    if (mqtt->remz < 1) {
-        msg = fb_mqtt_msg_new_bytes(mqtt->rbuf);
-        mqtt->remz = 0;
+    if (priv->remz < 1) {
+        msg = fb_mqtt_message_new_bytes(priv->rbuf);
+        priv->remz = 0;
 
-        if (G_UNLIKELY(msg == NULL))
-            goto error;
+        if (G_UNLIKELY(msg == NULL)) {
+            fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
+                          "Failed to parse message");
+            return FALSE;
+        }
 
         fb_mqtt_read(mqtt, msg);
-        fb_mqtt_msg_free(msg);
+        g_object_unref(msg);
     }
 
     return TRUE;
-
-error:
-    fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL, "Short read");
-    return FALSE;
 }
 
-/**
- * Read a #GByteArray to the #fb_mqtt.
- *
- * @param mqtt  The #fb_mqtt.
- * @param bytes The #GByteArray.
- **/
-void fb_mqtt_read(fb_mqtt_t *mqtt, fb_mqtt_msg_t *msg)
+void
+fb_mqtt_read(FbMqtt *mqtt, FbMqttMessage *msg)
 {
-    fb_mqtt_msg_t *nsg;
-    GByteArray    *wytes;
-    gchar         *str;
-    guint8         chr;
-    guint16        mid;
+    FbMqttMessage *nsg;
+    FbMqttPrivate *priv;
+    FbMqttMessagePrivate *mriv;
+    GByteArray *wytes;
+    gchar *str;
+    guint8 chr;
+    guint16 mid;
 
-    g_return_if_fail(mqtt != NULL);
-    g_return_if_fail(msg  != NULL);
+    g_return_if_fail(FB_IS_MQTT(mqtt));
+    g_return_if_fail(FB_IS_MQTT_MESSAGE(msg));
+    priv = mqtt->priv;
+    mriv = msg->priv;
 
-    fb_util_hexdump(msg->bytes, 2, "Reading %d (flags: 0x%0X)",
-                    msg->type, msg->flags);
+    fb_util_debug_hexdump(FB_UTIL_DEBUG_LEVEL_INFO, mriv->bytes,
+                          "Reading %d (flags: 0x%0X)",
+                          mriv->type, mriv->flags);
 
-    switch (msg->type) {
-    case FB_MQTT_MSG_TYPE_CONNACK:
-        if (!fb_mqtt_msg_read_byte(msg, NULL) ||
-            !fb_mqtt_msg_read_byte(msg, &chr))
+    switch (mriv->type) {
+    case FB_MQTT_MESSAGE_TYPE_CONNACK:
+        if (!fb_mqtt_message_read_byte(msg, NULL) ||
+            !fb_mqtt_message_read_byte(msg, &chr))
         {
             break;
         }
@@ -341,62 +429,67 @@ void fb_mqtt_read(fb_mqtt_t *mqtt, fb_mqtt_msg_t *msg)
             return;
         }
 
-        mqtt->connected = TRUE;
+        priv->connected = TRUE;
         fb_mqtt_ping(mqtt);
-        FB_MQTT_FUNC(mqtt, connack);
+        g_signal_emit_by_name(mqtt, "connect");
         return;
 
-    case FB_MQTT_MSG_TYPE_PUBLISH:
-        if (!fb_mqtt_msg_read_str(msg, &str))
+    case FB_MQTT_MESSAGE_TYPE_PUBLISH:
+        if (!fb_mqtt_message_read_str(msg, &str)) {
             break;
+        }
 
-        if ((msg->flags & FB_MQTT_MSG_FLAG_QOS1) ||
-            (msg->flags & FB_MQTT_MSG_FLAG_QOS2))
+        if ((mriv->flags & FB_MQTT_MESSAGE_FLAG_QOS1) ||
+            (mriv->flags & FB_MQTT_MESSAGE_FLAG_QOS2))
         {
-            if (msg->flags & FB_MQTT_MSG_FLAG_QOS1)
-                chr = FB_MQTT_MSG_TYPE_PUBACK;
-            else
-                chr = FB_MQTT_MSG_TYPE_PUBREC;
+            if (mriv->flags & FB_MQTT_MESSAGE_FLAG_QOS1) {
+                chr = FB_MQTT_MESSAGE_TYPE_PUBACK;
+            } else {
+                chr = FB_MQTT_MESSAGE_TYPE_PUBREC;
+            }
 
-            if (!fb_mqtt_msg_read_mid(msg, &mid))
+            if (!fb_mqtt_message_read_mid(msg, &mid)) {
                 break;
+            }
 
-            nsg = fb_mqtt_msg_new(chr, 0);
-            fb_mqtt_msg_write_u16(nsg, mid);
+            nsg = fb_mqtt_message_new(chr, 0);
+            fb_mqtt_message_write_u16(nsg, mid);
             fb_mqtt_write(mqtt, nsg);
-            fb_mqtt_msg_free(nsg);
+            g_object_unref(nsg);
         }
 
         wytes = g_byte_array_new();
-        fb_mqtt_msg_read_r(msg, wytes);
-        FB_MQTT_FUNC(mqtt, publish, str, wytes);
+        fb_mqtt_message_read_r(msg, wytes);
+        g_signal_emit_by_name(mqtt, "publish", str, wytes);
         g_byte_array_free(wytes, TRUE);
         g_free(str);
         return;
 
-    case FB_MQTT_MSG_TYPE_PUBREL:
-        if (!fb_mqtt_msg_read_mid(msg, &mid))
+    case FB_MQTT_MESSAGE_TYPE_PUBREL:
+        if (!fb_mqtt_message_read_mid(msg, &mid)) {
             break;
+        }
 
-        nsg = fb_mqtt_msg_new(FB_MQTT_MSG_TYPE_PUBCOMP, 0);
-        fb_mqtt_msg_write_u16(nsg, mid); /* Message identifier */
+        nsg = fb_mqtt_message_new(FB_MQTT_MESSAGE_TYPE_PUBCOMP, 0);
+        fb_mqtt_message_write_u16(nsg, mid); /* Message identifier */
         fb_mqtt_write(mqtt, nsg);
-        fb_mqtt_msg_free(nsg);
+        g_object_unref(nsg);
         return;
 
-    case FB_MQTT_MSG_TYPE_PINGRESP:
+    case FB_MQTT_MESSAGE_TYPE_PINGRESP:
         fb_mqtt_ping(mqtt);
         return;
 
-    case FB_MQTT_MSG_TYPE_PUBACK:
-    case FB_MQTT_MSG_TYPE_PUBCOMP:
-    case FB_MQTT_MSG_TYPE_SUBACK:
-    case FB_MQTT_MSG_TYPE_UNSUBACK:
+    case FB_MQTT_MESSAGE_TYPE_PUBACK:
+    case FB_MQTT_MESSAGE_TYPE_PUBCOMP:
+    case FB_MQTT_MESSAGE_TYPE_SUBACK:
+    case FB_MQTT_MESSAGE_TYPE_UNSUBACK:
         return;
 
     default:
-        fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL, "Unknown packet (%u)",
-                      msg->type);
+        fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
+                      "Unknown packet (%u)",
+                      mriv->type);
         return;
     }
 
@@ -404,654 +497,482 @@ void fb_mqtt_read(fb_mqtt_t *mqtt, fb_mqtt_msg_t *msg)
     fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL, "Failed to parse message");
 }
 
-/**
- * Implemented #b_event_handler for the writing of #fb_mqtt->fd.
- *
- * @param data The user defined data, which is #fb_mqtt.
- * @param fd   The event file descriptor.
- * @param cond The #b_input_condition.
- *
- * @return TRUE for continued event handling, otherwise FALSE.
- **/
-static gboolean fb_mqtt_cb_write(gpointer data, gint fd,
-                                 b_input_condition cond)
+static gboolean
+fb_mqtt_cb_write(gpointer data, gint fd, b_input_condition cond)
 {
-    fb_mqtt_t *mqtt = data;
-    gssize     wize;
+    FbMqtt *mqtt = data;
+    FbMqttPrivate *priv = mqtt->priv;
+    gssize wize;
 
-    wize = ssl_write(mqtt->ssl, (gchar*) mqtt->wbuf->data, mqtt->wbuf->len);
+    wize = ssl_write(priv->ssl, (gchar *) priv->wbuf->data, priv->wbuf->len);
 
     if (wize < 0) {
         fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL, "Failed to write data");
         return FALSE;
     }
 
-    if (wize > 0)
-        g_byte_array_remove_range(mqtt->wbuf, 0, wize);
+    if (wize > 0) {
+        g_byte_array_remove_range(priv->wbuf, 0, wize);
+    }
 
-    if (mqtt->wbuf->len < 1) {
-        mqtt->wev = 0;
+    if (priv->wbuf->len < 1) {
+        priv->wev = 0;
         return FALSE;
     }
 
     return TRUE;
 }
 
-/**
- * Writes a #fb_mqtt_msg to the #fb_mqtt.
- *
- * @param mqtt The #fb_mqtt.
- * @param msg  The #fb_mqtt_msg.
- **/
-void fb_mqtt_write(fb_mqtt_t *mqtt, fb_mqtt_msg_t *msg)
+void
+fb_mqtt_write(FbMqtt *mqtt, FbMqttMessage *msg)
 {
     const GByteArray *bytes;
+    FbMqttMessagePrivate *mriv;
+    FbMqttPrivate *priv;
     gint fd;
 
-    g_return_if_fail(mqtt != NULL);
+    g_return_if_fail(FB_IS_MQTT(mqtt));
+    g_return_if_fail(FB_IS_MQTT_MESSAGE(msg));
+    priv = mqtt->priv;
+    mriv = msg->priv;
 
-    bytes = fb_mqtt_msg_bytes(msg);
+    bytes = fb_mqtt_message_bytes(msg);
 
     if (G_UNLIKELY(bytes == NULL)) {
         fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL, "Failed to format data");
         return;
     }
 
-    fb_util_hexdump(bytes, 2, "Writing %d (flags: 0x%0X)",
-                    msg->type, msg->flags);
+    fb_util_debug_hexdump(FB_UTIL_DEBUG_LEVEL_INFO, mriv->bytes,
+                          "Writing %d (flags: 0x%0X)",
+                          mriv->type, mriv->flags);
 
-    fd = ssl_getfd(mqtt->ssl);
-    g_byte_array_append(mqtt->wbuf, bytes->data, bytes->len);
+    fd = ssl_getfd(priv->ssl);
+    g_byte_array_append(priv->wbuf, bytes->data, bytes->len);
+    fb_mqtt_cb_write(mqtt, fd, B_EV_IO_WRITE);
 
-    if ((mqtt->wev < 1) && fb_mqtt_cb_write(mqtt, fd, B_EV_IO_WRITE))
-        mqtt->wev = b_input_add(fd, B_EV_IO_WRITE, fb_mqtt_cb_write, mqtt);
+    if (priv->wev > 0) {
+        priv->wev = b_input_add(fd, B_EV_IO_WRITE, fb_mqtt_cb_write, mqtt);
+    }
 }
 
-/**
- * Implemented #ssl_input_function for the connection of #fb_mqtt->ssl.
- *
- * @param data  The user defined data, which is #fb_mqtt.
- * @param error The SSL error. (0 on success)
- * @param ssl   The SSL source.
- * @param cond  The #b_input_condition.
- *
- * @return TRUE for continued event handling, otherwise FALSE.
- **/
-static gboolean fb_mqtt_cb_open(gpointer data, gint error, gpointer ssl,
-                                b_input_condition cond)
+static gboolean
+fb_mqtt_cb_open(gpointer data, gint error, gpointer ssl,
+                b_input_condition cond)
 {
-    fb_mqtt_t *mqtt = data;
-    gint       fd;
+    FbMqtt *mqtt = data;
+    FbMqttPrivate *priv = mqtt->priv;
+    gint fd;
 
     if ((ssl == NULL) || (error != SSL_OK)) {
         fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL, "Failed to connect");
         return FALSE;
     }
 
+    fd = ssl_getfd(priv->ssl);
     fb_mqtt_timeout_clear(mqtt);
-    fd = ssl_getfd(mqtt->ssl);
-    mqtt->rev = b_input_add(fd, B_EV_IO_READ, fb_mqtt_cb_read, mqtt);
-
-    FB_MQTT_FUNC(mqtt, open);
+    priv->rev = b_input_add(fd, B_EV_IO_READ, fb_mqtt_cb_read, mqtt);
+    g_signal_emit_by_name(mqtt, "open");
     return FALSE;
 }
 
-/**
- * Opens the connection to the MQTT service.
- *
- * @param mqtt The #fb_mqtt.
- **/
-void fb_mqtt_open(fb_mqtt_t *mqtt, const gchar *host, gint port)
+void
+fb_mqtt_open(FbMqtt *mqtt, const gchar *host, gint port)
 {
-    g_return_if_fail(mqtt != NULL);
+    FbMqttPrivate *priv;
+
+    g_return_if_fail(FB_IS_MQTT(mqtt));
+    priv = mqtt->priv;
 
     fb_mqtt_close(mqtt);
-    mqtt->ssl = ssl_connect((gchar*) host, port, TRUE, fb_mqtt_cb_open, mqtt);
+    priv->ssl = ssl_connect((gchar *) host, port, TRUE, fb_mqtt_cb_open, mqtt);
 
-    if (mqtt->ssl == NULL) {
-        fb_mqtt_cb_open(mqtt, 1, NULL, 0);
+    if (priv->ssl == NULL) {
+        fb_mqtt_cb_open(mqtt, SSL_NOHANDSHAKE, NULL, 0);
         return;
     }
 
     fb_mqtt_timeout(mqtt);
 }
 
-/**
- * Connects to the MQTT service. This first establishes an SSL based
- * socket. Then it sends the initial connection packet with optional
- * arguments, which correspond to the flags provided. The arguments
- * must be passed in order: client identifier, will topic, will
- * message, username, and password (not required). The arguments must
- * be in a string format.
- *
- * @param mqtt    The #fb_mqtt.
- * @param timeout The keep-alive timeout (seconds).
- * @param flags   The #fb_mqtt_connect_flags.
- * @param cid     The client identifier.
- * @param ...     Additional arguments in order, NULL-terminated.
- **/
-void fb_mqtt_connect(fb_mqtt_t *mqtt, guint8 flags, const gchar *cid, ...)
+void
+fb_mqtt_connect(FbMqtt *mqtt, guint8 flags, const GByteArray *pload)
 {
-    fb_mqtt_msg_t *msg;
-    va_list        ap;
-    const gchar   *str;
+    FbMqttMessage *msg;
 
-    g_return_if_fail(mqtt != NULL);
-
-    if (G_UNLIKELY(fb_mqtt_connected(mqtt, FALSE)))
-        return;
+    g_return_if_fail(!fb_mqtt_connected(mqtt, FALSE));
+    g_return_if_fail(pload != NULL);
 
     /* Facebook always sends a CONNACK, use QoS1 */
     flags |= FB_MQTT_CONNECT_FLAG_QOS1;
 
-    msg = fb_mqtt_msg_new(FB_MQTT_MSG_TYPE_CONNECT, 0);
-    fb_mqtt_msg_write_str(msg, FB_MQTT_NAME);  /* Protocol name */
-    fb_mqtt_msg_write_byte(msg, FB_MQTT_VERS); /* Protocol version */
-    fb_mqtt_msg_write_byte(msg, flags);        /* Flags */
-    fb_mqtt_msg_write_u16(msg, FB_MQTT_KA);    /* Keep alive */
-    fb_mqtt_msg_write_str(msg, cid);           /* Client identifier */
+    msg = fb_mqtt_message_new(FB_MQTT_MESSAGE_TYPE_CONNECT, 0);
+    fb_mqtt_message_write_str(msg, FB_MQTT_NAME);   /* Protocol name */
+    fb_mqtt_message_write_byte(msg, FB_MQTT_LEVEL); /* Protocol level */
+    fb_mqtt_message_write_byte(msg, flags);         /* Flags */
+    fb_mqtt_message_write_u16(msg, FB_MQTT_KA);     /* Keep alive */
 
-    va_start(ap, cid);
-
-    while ((str = va_arg(ap, const gchar*)) != NULL)
-        fb_mqtt_msg_write_str(msg, str);
-
-    va_end(ap);
-
+    fb_mqtt_message_write(msg, pload->data, pload->len);
     fb_mqtt_write(mqtt, msg);
-    fb_mqtt_msg_free(msg);
+
     fb_mqtt_timeout(mqtt);
+    g_object_unref(msg);
 }
 
-/**
- * Checks the #fb_mqtt connection.
- *
- * @param mqtt  The #fb_mqtt.
- * @param error TRUE to error upon no connection, FALSE otherwise.
- *
- * @return TRUE if the #fb_mqtt is connected, FALSE otherwise.
- **/
-gboolean fb_mqtt_connected(fb_mqtt_t *mqtt, gboolean error)
+gboolean
+fb_mqtt_connected(FbMqtt *mqtt, gboolean error)
 {
+    FbMqttPrivate *priv;
     gboolean connected;
 
-    g_return_val_if_fail(mqtt != NULL, FALSE);
+    g_return_val_if_fail(FB_IS_MQTT(mqtt), FALSE);
+    priv = mqtt->priv;
+    connected = (priv->ssl != NULL) && priv->connected;
 
-    connected = (mqtt->ssl != NULL) && mqtt->connected;
-
-    if (!connected && error)
+    if (!connected && error) {
         fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL, "Not connected");
+    }
 
     return connected;
 }
 
-/**
- * Disconnects from the MQTT service. This cleanly disconnects from the
- * MQTT services, rather than killing the socket stream. This closes
- * the #fb_mqtt via #fb_mqtt_close().
- *
- * @param mqtt The #fb_mqtt.
- **/
-void fb_mqtt_disconnect(fb_mqtt_t *mqtt)
+void
+fb_mqtt_disconnect(FbMqtt *mqtt)
 {
-    fb_mqtt_msg_t *msg;
+    FbMqttMessage *msg;
 
-    g_return_if_fail(mqtt != NULL);
-
-    if (G_UNLIKELY(!fb_mqtt_connected(mqtt, FALSE)))
+    if (G_UNLIKELY(!fb_mqtt_connected(mqtt, FALSE))) {
         return;
+    }
 
-    msg = fb_mqtt_msg_new(FB_MQTT_MSG_TYPE_DISCONNECT, 0);
+    msg = fb_mqtt_message_new(FB_MQTT_MESSAGE_TYPE_DISCONNECT, 0);
     fb_mqtt_write(mqtt, msg);
-    fb_mqtt_msg_free(msg);
+    g_object_unref(msg);
     fb_mqtt_close(mqtt);
 }
 
-/**
- * Publishes a message to MQTT service.
- *
- * @param mqtt  The #fb_mqtt.
- * @param topic The message topic.
- * @param pload The #GByteArray payload or NULL.
- **/
-void fb_mqtt_publish(fb_mqtt_t *mqtt, const gchar *topic,
-                     const GByteArray *pload)
+void
+fb_mqtt_publish(FbMqtt *mqtt, const gchar *topic, const GByteArray *pload)
 {
-    fb_mqtt_msg_t *msg;
+    FbMqttMessage *msg;
+    FbMqttPrivate *priv;
 
-    g_return_if_fail(mqtt != NULL);
-
-    if (G_UNLIKELY(!fb_mqtt_connected(mqtt, TRUE)))
-        return;
+    g_return_if_fail(FB_IS_MQTT(mqtt));
+    g_return_if_fail(fb_mqtt_connected(mqtt, FALSE));
+    priv = mqtt->priv;
 
     /* Message identifier not required, but for consistency use QoS1 */
-    msg = fb_mqtt_msg_new(FB_MQTT_MSG_TYPE_PUBLISH, FB_MQTT_MSG_FLAG_QOS1);
+    msg = fb_mqtt_message_new(FB_MQTT_MESSAGE_TYPE_PUBLISH,
+                              FB_MQTT_MESSAGE_FLAG_QOS1);
 
-    fb_mqtt_msg_write_str(msg, topic);      /* Message topic */
-    fb_mqtt_msg_write_mid(msg, &mqtt->mid); /* Message identifier */
+    fb_mqtt_message_write_str(msg, topic);      /* Message topic */
+    fb_mqtt_message_write_mid(msg, &priv->mid); /* Message identifier */
 
-    if (pload != NULL)
-        fb_mqtt_msg_write(msg, pload->data, pload->len);
+    if (pload != NULL) {
+        fb_mqtt_message_write(msg, pload->data, pload->len);
+    }
 
     fb_mqtt_write(mqtt, msg);
-    fb_mqtt_msg_free(msg);
+    g_object_unref(msg);
 }
 
-/**
- * Subscribes to one or more topics.
- *
- * @param mqtt   The #fb_mqtt.
- * @param topic1 The first topic name.
- * @param qos1   The first QoS value.
- * @param ...    Additional topic names and QoS values, NULL-terminated.
- **/
-void fb_mqtt_subscribe(fb_mqtt_t *mqtt, const gchar *topic1, guint16 qos1, ...)
+void
+fb_mqtt_subscribe(FbMqtt *mqtt, const gchar *topic1, guint16 qos1, ...)
 {
-    fb_mqtt_msg_t *msg;
-    va_list        ap;
-    const gchar   *topic;
-    guint16        qos;
+    const gchar *topic;
+    FbMqttMessage *msg;
+    FbMqttPrivate *priv;
+    guint16 qos;
+    va_list ap;
 
-    g_return_if_fail(mqtt != NULL);
-
-    if (G_UNLIKELY(!fb_mqtt_connected(mqtt, TRUE)))
-        return;
+    g_return_if_fail(FB_IS_MQTT(mqtt));
+    g_return_if_fail(fb_mqtt_connected(mqtt, FALSE));
+    priv = mqtt->priv;
 
     /* Facebook requires a message identifier, use QoS1 */
-    msg = fb_mqtt_msg_new(FB_MQTT_MSG_TYPE_SUBSCRIBE, FB_MQTT_MSG_FLAG_QOS1);
+    msg = fb_mqtt_message_new(FB_MQTT_MESSAGE_TYPE_SUBSCRIBE,
+                              FB_MQTT_MESSAGE_FLAG_QOS1);
 
-    fb_mqtt_msg_write_mid(msg, &mqtt->mid); /* Message identifier */
-    fb_mqtt_msg_write_str(msg, topic1);     /* First topics */
-    fb_mqtt_msg_write_byte(msg, qos1);      /* First QoS value */
+    fb_mqtt_message_write_mid(msg, &priv->mid); /* Message identifier */
+    fb_mqtt_message_write_str(msg, topic1);     /* First topics */
+    fb_mqtt_message_write_byte(msg, qos1);      /* First QoS value */
 
     va_start(ap, qos1);
 
     while ((topic = va_arg(ap, const gchar*)) != NULL) {
         qos = va_arg(ap, guint);
-        fb_mqtt_msg_write_str(msg, topic); /* Remaining topics */
-        fb_mqtt_msg_write_byte(msg, qos);  /* Remaining QoS values */
+        fb_mqtt_message_write_str(msg, topic); /* Remaining topics */
+        fb_mqtt_message_write_byte(msg, qos);  /* Remaining QoS values */
     }
 
     va_end(ap);
 
     fb_mqtt_write(mqtt, msg);
-    fb_mqtt_msg_free(msg);
+    g_object_unref(msg);
 }
 
-/**
- * Unsubscribes from one or more topics.
- *
- * @param mqtt   The #fb_mqtt.
- * @param topic1 The first topic name.
- * @param ...    Additional topic names, NULL-terminated.
- **/
-void fb_mqtt_unsubscribe(fb_mqtt_t *mqtt, const gchar *topic1, ...)
+void
+fb_mqtt_unsubscribe(FbMqtt *mqtt, const gchar *topic1, ...)
 {
-    fb_mqtt_msg_t *msg;
-    va_list        ap;
-    const gchar   *topic;
+    const gchar *topic;
+    FbMqttMessage *msg;
+    FbMqttPrivate *priv;
+    va_list ap;
 
-    g_return_if_fail(mqtt != NULL);
-
-    if (G_UNLIKELY(!fb_mqtt_connected(mqtt, TRUE)))
-        return;
+    g_return_if_fail(FB_IS_MQTT(mqtt));
+    g_return_if_fail(fb_mqtt_connected(mqtt, FALSE));
+    priv = mqtt->priv;
 
     /* Facebook requires a message identifier, use QoS1 */
-    msg = fb_mqtt_msg_new(FB_MQTT_MSG_TYPE_UNSUBSCRIBE, FB_MQTT_MSG_FLAG_QOS1);
+    msg = fb_mqtt_message_new(FB_MQTT_MESSAGE_TYPE_UNSUBSCRIBE,
+                              FB_MQTT_MESSAGE_FLAG_QOS1);
 
-    fb_mqtt_msg_write_mid(msg, &mqtt->mid); /* Message identifier */
-    fb_mqtt_msg_write_str(msg, topic1);     /* First topic */
+    fb_mqtt_message_write_mid(msg, &priv->mid); /* Message identifier */
+    fb_mqtt_message_write_str(msg, topic1);     /* First topic */
 
     va_start(ap, topic1);
 
-    while ((topic = va_arg(ap, const gchar*)) != NULL)
-        fb_mqtt_msg_write_str(msg, topic); /* Remaining topics */
+    while ((topic = va_arg(ap, const gchar*)) != NULL) {
+        fb_mqtt_message_write_str(msg, topic); /* Remaining topics */
+    }
 
     va_end(ap);
 
     fb_mqtt_write(mqtt, msg);
-    fb_mqtt_msg_free(msg);
+    g_object_unref(msg);
 }
 
-/**
- * Creates a new #fb_mqtt_msg. The returned #fb_mqtt_msg should be
- * freed with #fb_mqtt_msg_free() when no longer needed.
- *
- * @param type  The #fb_mqtt_msg_type.
- * @param flags The #fb_mqtt_msg_flags.
- *
- * @return The #fb_mqtt_msg or NULL on error.
- **/
-fb_mqtt_msg_t *fb_mqtt_msg_new(fb_mqtt_msg_type_t type,
-                               fb_mqtt_msg_flags_t flags)
+FbMqttMessage *
+fb_mqtt_message_new(FbMqttMessageType type, FbMqttMessageFlags flags)
 {
-    fb_mqtt_msg_t *msg;
+    FbMqttMessage *msg;
+    FbMqttMessagePrivate *priv;
 
-    msg = g_new0(fb_mqtt_msg_t, 1);
-    msg->type  = type;
-    msg->flags = flags;
-    msg->bytes = g_byte_array_new();
-    msg->local = TRUE;
+    msg = g_object_new(FB_TYPE_MQTT_MESSAGE, NULL);
+    priv = msg->priv;
+
+    priv->type = type;
+    priv->flags = flags;
+    priv->bytes = g_byte_array_new();
+    priv->local = TRUE;
 
     return msg;
 }
 
-/**
- * Creates a new #fb_mqtt_msg from a #GByteArray containing a raw data.
- * The returned #fb_mqtt_msg should be freed with #fb_mqtt_msg_free()
- * when no longer needed. The GByteArray passed to this function MUST
- * remain for the lifetime of the #fb_mqtt_msg.
- *
- * @param bytes  The #GByteArray.
- *
- * @return The #fb_mqtt_msg or NULL on error.
- **/
-fb_mqtt_msg_t *fb_mqtt_msg_new_bytes(GByteArray *bytes)
+FbMqttMessage *
+fb_mqtt_message_new_bytes(GByteArray *bytes)
 {
-    fb_mqtt_msg_t *msg;
-    guint8        *byte;
+    FbMqttMessage *msg;
+    FbMqttMessagePrivate *priv;
+    guint8 *byte;
 
-    g_return_val_if_fail(bytes != NULL,   NULL);
+    g_return_val_if_fail(bytes != NULL, NULL);
     g_return_val_if_fail(bytes->len >= 2, NULL);
 
-    msg = g_new0(fb_mqtt_msg_t, 1);
-    msg->bytes = bytes;
-    msg->local = FALSE;
+    msg = g_object_new(FB_TYPE_MQTT_MESSAGE, NULL);
+    priv = msg->priv;
 
-    if (bytes->len > 1) {
-        msg->type  = (*bytes->data & 0xF0) >> 4;
-        msg->flags = *bytes->data & 0x0F;
+    priv->bytes = bytes;
+    priv->local = FALSE;
+    priv->type = (*bytes->data & 0xF0) >> 4;
+    priv->flags = *bytes->data & 0x0F;
 
-        /* Skip the fixed header */
-        for (byte = msg->bytes->data + 1; (*(byte++) & 128) != 0; );
-        msg->offset = byte - bytes->data;
-        msg->pos    = msg->offset;
-    }
+    /* Skip the fixed header */
+    for (byte = priv->bytes->data + 1; (*(byte++) & 128) != 0; );
+    priv->offset = byte - bytes->data;
+    priv->pos = priv->offset;
 
     return msg;
 }
 
-/**
- * Frees all memory used by a #fb_mqtt_msg.
- *
- * @param msg The #fb_mqtt_msg.
- **/
-void fb_mqtt_msg_free(fb_mqtt_msg_t *msg)
+void
+fb_mqtt_message_reset(FbMqttMessage *msg)
 {
-    g_return_if_fail(msg != NULL);
+    FbMqttMessagePrivate *priv;
 
-    if (msg->local)
-        g_byte_array_free(msg->bytes, TRUE);
+    g_return_if_fail(FB_IS_MQTT_MESSAGE(msg));
+    priv = msg->priv;
 
-    g_free(msg);
-}
-
-/**
- * Resets a #fb_mqtt_msg. This resets the cursor and removes any sort
- * of fixed header.
- *
- * @param msg The #fb_mqtt_msg.
- **/
-void fb_mqtt_msg_reset(fb_mqtt_msg_t *msg)
-{
-    if (G_UNLIKELY(msg == NULL))
-        return;
-
-    if (msg->offset > 0) {
-        g_byte_array_remove_range(msg->bytes, 0, msg->offset);
-        msg->offset = 0;
-        msg->pos    = 0;
+    if (priv->offset > 0) {
+        g_byte_array_remove_range(priv->bytes, 0, priv->offset);
+        priv->offset = 0;
+        priv->pos = 0;
     }
 }
 
-/**
- * Formats the internal #GByteArray of a #fb_mqtt_msg with the required
- * fixed header for sending over the wire. This set the cursor position
- * to the start of the message data.
- *
- * @param msg The #fb_mqtt_msg.
- *
- * @return The internal #GByteArray.
- **/
-const GByteArray *fb_mqtt_msg_bytes(fb_mqtt_msg_t *msg)
+const GByteArray *
+fb_mqtt_message_bytes(FbMqttMessage *msg)
 {
-    guint8  sbuf[4];
-    guint8  byte;
+    FbMqttMessagePrivate *priv;
+    guint i;
+    guint8 byte;
+    guint8 sbuf[4];
     guint32 size;
-    guint   i;
 
-    g_return_val_if_fail(msg != NULL, NULL);
+    g_return_val_if_fail(FB_IS_MQTT_MESSAGE(msg), NULL);
+    priv = msg->priv;
 
-    size = msg->bytes->len - msg->offset;
-    i    = 0;
+    i = 0;
+    size = priv->bytes->len - priv->offset;
 
     do {
-        if (G_UNLIKELY(i >= G_N_ELEMENTS(sbuf)))
+        if (G_UNLIKELY(i >= G_N_ELEMENTS(sbuf))) {
             return NULL;
+        }
 
-        byte  = size % 128;
+        byte = size % 128;
         size /= 128;
 
-        if (size > 0)
+        if (size > 0) {
             byte |= 128;
+        }
 
         sbuf[i++] = byte;
     } while (size > 0);
 
-    fb_mqtt_msg_reset(msg);
-    g_byte_array_prepend(msg->bytes, sbuf, i);
+    fb_mqtt_message_reset(msg);
+    g_byte_array_prepend(priv->bytes, sbuf, i);
 
-    byte = ((msg->type & 0x0F) << 4) | (msg->flags & 0x0F);
-    g_byte_array_prepend(msg->bytes, &byte, sizeof byte);
+    byte = ((priv->type & 0x0F) << 4) | (priv->flags & 0x0F);
+    g_byte_array_prepend(priv->bytes, &byte, sizeof byte);
 
-    msg->pos = (i + 1) * (sizeof byte);
-    return msg->bytes;
+    priv->pos = (i + 1) * (sizeof byte);
+    return priv->bytes;
 }
 
-/**
- * Reads raw data from a #fb_mqtt_msg.
- *
- * @param msg  The #fb_mqtt_msg.
- * @param data The data buffer or NULL.
- * @param size The size of data to read.
- *
- * @return TRUE if the data was completely read, otherwise FALSE.
- **/
-gboolean fb_mqtt_msg_read(fb_mqtt_msg_t *msg, gpointer data, guint size)
+gboolean
+fb_mqtt_message_read(FbMqttMessage *msg, gpointer data, guint size)
 {
-    g_return_val_if_fail(msg != NULL, FALSE);
+    FbMqttMessagePrivate *priv;
 
-    if ((msg->pos + size) > msg->bytes->len)
-        return FALSE;
+    g_return_val_if_fail(FB_IS_MQTT_MESSAGE(msg), FALSE);
+    priv = msg->priv;
 
-    if ((data != NULL) && (size > 0))
-        memcpy(data, msg->bytes->data + msg->pos, size);
-
-    msg->pos += size;
-    return TRUE;
-}
-
-/**
- * Reads the remaining bytes from a #fb_mqtt_msg into a #GByteArray.
- *
- * @param msg   The #fb_mqtt_msg.
- * @param bytes The #GByteArray.
- *
- * @return TRUE if the byte string was read, otherwise FALSE.
- **/
-gboolean fb_mqtt_msg_read_r(fb_mqtt_msg_t *msg, GByteArray *bytes)
-{
-    guint size;
-
-    g_return_val_if_fail(bytes != NULL, FALSE);
-
-    size = msg->bytes->len - msg->pos;
-
-    if (G_LIKELY(size > 0))
-        g_byte_array_append(bytes, msg->bytes->data + msg->pos, size);
-
-    return TRUE;
-}
-
-/**
- * Reads a single byte from a #fb_mqtt_msg. If the return location is
- * NULL, only the cursor is advanced.
- *
- * @param msg  The #fb_mqtt_msg.
- * @param byte The return location for the byte or NULL.
- *
- * @return TRUE if the byte string was read, otherwise FALSE.
- **/
-gboolean fb_mqtt_msg_read_byte(fb_mqtt_msg_t *msg, guint8 *byte)
-{
-    if (byte != NULL)
-        *byte = 0;
-
-    return fb_mqtt_msg_read(msg, byte, sizeof *byte);
-}
-
-/**
- * Reads a message identifier from a #fb_mqtt_msg. If the return
- * location is NULL, only the cursor is advanced.
- *
- * @param msg The #fb_mqtt_msg.
- * @param mid The return location for the message identifier or NULL.
- *
- * @return TRUE if the message identifier was read, otherwise FALSE.
- **/
-gboolean fb_mqtt_msg_read_mid(fb_mqtt_msg_t *msg, guint16 *mid)
-{
-    return fb_mqtt_msg_read_u16(msg, mid);
-}
-
-/**
- * Reads an unsigned 16-bit integer from a #fb_mqtt_msg. If the return
- * location is NULL, only the cursor is advanced.
- *
- * @param msg The #fb_mqtt_msg.
- * @param u16 The return location for the integer or NULL.
- *
- * @return TRUE if the integer was read, otherwise FALSE.
- **/
-gboolean fb_mqtt_msg_read_u16(fb_mqtt_msg_t *msg, guint16 *u16)
-{
-    if (!fb_mqtt_msg_read(msg, u16, sizeof *u16)) {
-        if (u16 != NULL)
-            *u16 = 0;
-
+    if ((priv->pos + size) > priv->bytes->len) {
         return FALSE;
     }
 
-    if (u16 != NULL)
-        *u16 = g_ntohs(*u16);
+    if ((data != NULL) && (size > 0)) {
+        memcpy(data, priv->bytes->data + priv->pos, size);
+    }
+
+    priv->pos += size;
+    return TRUE;
+}
+
+gboolean
+fb_mqtt_message_read_r(FbMqttMessage *msg, GByteArray *bytes)
+{
+    FbMqttMessagePrivate *priv;
+    guint size;
+
+    g_return_val_if_fail(FB_IS_MQTT_MESSAGE(msg), FALSE);
+    priv = msg->priv;
+    size = priv->bytes->len - priv->pos;
+
+    if (G_LIKELY(size > 0)) {
+        g_byte_array_append(bytes, priv->bytes->data + priv->pos,
+                            size);
+    }
 
     return TRUE;
 }
 
-/**
- * Reads a string from a #fb_mqtt_msg. If the return location is NULL,
- * only the cursor is advanced. The returned string should be freed
- * with #g_free() when no longer needed.
- *
- * @param msg The #fb_mqtt_msg.
- * @param str The return location for the string or NULL.
- *
- * @return TRUE if the string was read, otherwise FALSE.
- **/
-gboolean fb_mqtt_msg_read_str(fb_mqtt_msg_t *msg, gchar **str)
+gboolean
+fb_mqtt_message_read_byte(FbMqttMessage *msg, guint8 *value)
 {
-    guint16  size;
-    guint8  *data;
+    return fb_mqtt_message_read(msg, value, sizeof *value);
+}
 
-    if (str != NULL)
-        *str = NULL;
+gboolean
+fb_mqtt_message_read_mid(FbMqttMessage *msg, guint16 *value)
+{
+    return fb_mqtt_message_read_u16(msg, value);
+}
 
-    if (!fb_mqtt_msg_read_u16(msg, &size))
+gboolean
+fb_mqtt_message_read_u16(FbMqttMessage *msg, guint16 *value)
+{
+    if (!fb_mqtt_message_read(msg, value, sizeof *value)) {
         return FALSE;
+    }
 
-    if (str != NULL) {
+    if (value != NULL) {
+        *value = g_ntohs(*value);
+    }
+
+    return TRUE;
+}
+
+gboolean
+fb_mqtt_message_read_str(FbMqttMessage *msg, gchar **value)
+{
+    guint8 *data;
+    guint16 size;
+
+    if (!fb_mqtt_message_read_u16(msg, &size)) {
+        return FALSE;
+    }
+
+    if (value != NULL) {
         data = g_new(guint8, size + 1);
         data[size] = 0;
     } else {
         data = NULL;
     }
 
-    if (!fb_mqtt_msg_read(msg, data, size)) {
+    if (!fb_mqtt_message_read(msg, data, size)) {
         g_free(data);
         return FALSE;
     }
 
-    if (str != NULL)
-        *str = (gchar*) data;
+    if (value != NULL) {
+        *value = (gchar*) data;
+    }
 
     return TRUE;
 }
 
-/**
- * Writes raw data to a #fb_mqtt_msg.
- *
- * @param msg  The #fb_mqtt_msg.
- * @param data The data.
- * @param size The size of the data.
- **/
-void fb_mqtt_msg_write(fb_mqtt_msg_t *msg, gconstpointer data, guint size)
+void
+fb_mqtt_message_write(FbMqttMessage *msg, gconstpointer data, guint size)
 {
-    g_return_if_fail(msg != NULL);
+    FbMqttMessagePrivate *priv;
 
-    g_byte_array_append(msg->bytes, data, size);
-    msg->pos += size;
+    g_return_if_fail(FB_IS_MQTT_MESSAGE(msg));
+    priv = msg->priv;
+
+    g_byte_array_append(priv->bytes, data, size);
+    priv->pos += size;
 }
 
-/**
- * Writes a single byte to a #fb_mqtt_msg.
- *
- * @param msg  The #fb_mqtt_msg.
- * @param byte The byte.
- **/
-void fb_mqtt_msg_write_byte(fb_mqtt_msg_t *msg, guint8 byte)
+void
+fb_mqtt_message_write_byte(FbMqttMessage *msg, guint8 value)
 {
-    fb_mqtt_msg_write(msg, &byte, sizeof byte);
+    fb_mqtt_message_write(msg, &value, sizeof value);
 }
 
-/**
- * Writes a 16-bit message identifier to a #fb_mqtt_msg. This advances
- * the message identifier by one before usage.
- *
- * @param msg The #fb_mqtt_msg.
- * @param mid The return location of the message identifier.
- **/
-void fb_mqtt_msg_write_mid(fb_mqtt_msg_t *msg, guint16 *mid)
+void
+fb_mqtt_message_write_mid(FbMqttMessage *msg, guint16 *value)
 {
-    g_return_if_fail(mid != NULL);
-
-    fb_mqtt_msg_write_u16(msg, ++(*mid));
+    g_return_if_fail(value != NULL);
+    fb_mqtt_message_write_u16(msg, ++(*value));
 }
 
-/**
- * Writes an unsigned 16-bit integer to a #fb_mqtt_msg.
- *
- * @param msg The #fb_mqtt_msg.
- * @param u16 Theinteger.
- **/
-void fb_mqtt_msg_write_u16(fb_mqtt_msg_t *msg, guint16 u16)
+void
+fb_mqtt_message_write_u16(FbMqttMessage *msg, guint16 value)
 {
-    u16 = g_htons(u16);
-    fb_mqtt_msg_write(msg, &u16, sizeof u16);
+    value = g_htons(value);
+    fb_mqtt_message_write(msg, &value, sizeof value);
 }
 
-/**
- * Writes a string to a #fb_mqtt_msg.
- *
- * @param msg The #fb_mqtt_msg.
- * @param str The string.
- **/
-void fb_mqtt_msg_write_str(fb_mqtt_msg_t *msg, const gchar *str)
+void
+fb_mqtt_message_write_str(FbMqttMessage *msg, const gchar *value)
 {
     gint16 size;
 
-    g_return_if_fail(str != NULL);
+    g_return_if_fail(value != NULL);
 
-    size = strlen(str);
-    fb_mqtt_msg_write_u16(msg, size);
-    fb_mqtt_msg_write(msg, str, size);
+    size = strlen(value);
+    fb_mqtt_message_write_u16(msg, size);
+    fb_mqtt_message_write(msg, value, size);
 }

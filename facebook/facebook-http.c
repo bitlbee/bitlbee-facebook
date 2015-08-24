@@ -17,16 +17,123 @@
 
 #include <bitlbee.h>
 #include <string.h>
+#include <url.h>
 
 #include "facebook-http.h"
 #include "facebook-util.h"
 
-/**
- * Gets the error domain for #fb_http.
- *
- * @return The #GQuark of the error domain.
- **/
-GQuark fb_http_error_quark(void)
+struct _FbHttpPrivate
+{
+    FbHttpValues *cookies;
+    GHashTable *reqs;
+    gchar *agent;
+};
+
+struct _FbHttpRequestPrivate
+{
+    FbHttp *http;
+    gchar *url;
+    url_t purl;
+    gboolean post;
+
+    FbHttpValues *headers;
+    FbHttpValues *params;
+
+    FbHttpFunc func;
+    gpointer data;
+
+    GError *error;
+    struct http_request *request;
+    gboolean freed;
+};
+
+G_DEFINE_TYPE(FbHttp, fb_http, G_TYPE_OBJECT);
+G_DEFINE_TYPE(FbHttpRequest, fb_http_request, G_TYPE_OBJECT);
+
+static void
+fb_http_dispose(GObject *obj)
+{
+    FbHttp *http = FB_HTTP(obj);
+    FbHttpPrivate *priv = http->priv;
+
+    g_free(priv->agent);
+    fb_http_close_requests(http);
+    g_hash_table_destroy(priv->reqs);
+    fb_http_values_free(priv->cookies);
+}
+
+static void
+fb_http_class_init(FbHttpClass *klass)
+{
+    GObjectClass *gklass = G_OBJECT_CLASS(klass);
+
+    gklass->dispose = fb_http_dispose;
+    g_type_class_add_private(klass, sizeof (FbHttpPrivate));
+}
+
+static void
+fb_http_init(FbHttp *http)
+{
+    FbHttpPrivate *priv;
+
+    priv = G_TYPE_INSTANCE_GET_PRIVATE(http, FB_TYPE_HTTP, FbHttpPrivate);
+    http->priv = priv;
+
+    priv->cookies = fb_http_values_new();
+    priv->reqs = g_hash_table_new(g_direct_hash, g_direct_equal);
+}
+
+static void
+fb_http_req_close_nuller(struct http_request *request)
+{
+
+}
+
+static void
+fb_http_request_dispose(GObject *obj)
+{
+    FbHttpRequestPrivate *priv = FB_HTTP_REQUEST(obj)->priv;
+
+    if ((priv->request != NULL) && !priv->freed) {
+        /* Prevent more than one call to request->func() */
+        priv->request->func = fb_http_req_close_nuller;
+        priv->request->data = NULL;
+        http_close(priv->request);
+    }
+
+    if (priv->error != NULL) {
+        g_error_free(priv->error);
+    }
+
+    g_free(priv->url);
+    fb_http_values_free(priv->headers);
+    fb_http_values_free(priv->params);
+}
+
+static void
+fb_http_request_class_init(FbHttpRequestClass *klass)
+{
+    GObjectClass *gklass = G_OBJECT_CLASS(klass);
+
+    gklass->dispose = fb_http_request_dispose;
+    g_type_class_add_private(klass, sizeof (FbHttpRequestPrivate));
+}
+
+static void
+fb_http_request_init(FbHttpRequest *req)
+{
+    FbHttpRequestPrivate *priv;
+
+    priv = G_TYPE_INSTANCE_GET_PRIVATE(req, FB_TYPE_HTTP_REQUEST,
+                                       FbHttpRequestPrivate);
+    req->priv = priv;
+
+    priv->headers = fb_http_values_new();
+    priv->params = fb_http_values_new();
+}
+
+GQuark
+fb_http_error_quark(void)
 {
     static GQuark q;
 
@@ -36,160 +143,98 @@ GQuark fb_http_error_quark(void)
     return q;
 }
 
-/**
- * Creates a new #fb_http. The returned #fb_http should be freed with
- * #fb_http_free() when no longer needed.
- *
- * @param agent The HTTP agent.
- *
- * @return The #fb_http or NULL on error.
- **/
-fb_http_t *fb_http_new(const gchar *agent)
+FbHttp *
+fb_http_new(const gchar *agent)
 {
-    fb_http_t *http;
+    FbHttp *http;
+    FbHttpPrivate *priv;
 
-    http = g_new0(fb_http_t, 1);
-
-    http->agent   = g_strdup(agent);
-    http->reqs    = g_hash_table_new(g_direct_hash, g_direct_equal);
-    http->cookies = g_hash_table_new_full(g_str_hash,
-                                          (GEqualFunc) fb_util_str_iequal,
-                                          g_free, g_free);
+    http = g_object_new(FB_TYPE_HTTP, NULL);
+    priv = http->priv;
+    priv->agent = g_strdup(agent);
     return http;
 }
 
-/**
- * Frees all #fb_http_req inside a #fb_http.
- *
- * @param http The #fb_http.
- **/
-void fb_http_free_reqs(fb_http_t *http)
+FbHttpValues *
+fb_http_get_cookies(FbHttp *http)
 {
+    FbHttpPrivate *priv;
+
+    g_return_val_if_fail(FB_IS_HTTP(http), NULL);
+    priv = http->priv;
+
+    return priv->cookies;
+}
+
+void
+fb_http_close_requests(FbHttp *http)
+{
+    FbHttpPrivate *priv;
+    FbHttpRequest *req;
     GHashTableIter iter;
-    gpointer       key;
 
-    if (G_UNLIKELY(http == NULL))
-        return;
+    g_return_if_fail(FB_IS_HTTP(http));
+    priv = http->priv;
 
-    g_hash_table_iter_init(&iter, http->reqs);
+    g_hash_table_iter_init(&iter, priv->reqs);
 
-    while (g_hash_table_iter_next(&iter, &key, NULL)) {
+    while (g_hash_table_iter_next(&iter, (gpointer) &req, NULL)) {
         g_hash_table_iter_remove(&iter);
-        fb_http_req_free(key);
+        g_object_unref(req);
     }
 }
 
-/**
- * Frees all memory used by a #fb_http.
- *
- * @param http The #fb_http.
- **/
-void fb_http_free(fb_http_t *http)
+void
+fb_http_cookies_parse_request(FbHttp *http, FbHttpRequest *req)
 {
-    if (G_UNLIKELY(http == NULL))
-        return;
-
-    fb_http_free_reqs(http);
-    g_hash_table_destroy(http->reqs);
-    g_hash_table_destroy(http->cookies);
-
-    g_free(http->agent);
-    g_free(http);
-}
-
-/**
- * Inserts a #va_list into a #GHashTable.
- *
- * @param table The #GHashTable.
- * @param pair  The first #fb_http_pair.
- * @param ap    The #va_list.
- **/
-static void fb_http_tree_ins(GHashTable *table, const fb_http_pair_t *pair,
-                             va_list ap)
-{
-    const fb_http_pair_t *p;
-    gchar *key;
-    gchar *val;
-
-    for (p = pair; p != NULL; ) {
-        if (p->key == NULL)
-            continue;
-
-        key = g_strdup(p->key);
-        val = g_strdup(p->val);
-
-        g_hash_table_replace(table, key, val);
-        p = va_arg(ap, const fb_http_pair_t*);
-    }
-}
-
-/**
- * Sets cookies from #fb_http_pair. If a cookie already exists, it is
- * overwritten with the new value.
- *
- * @param http The #fb_http.
- * @param pair The first #fb_http_pair.
- * @param ...  The additional #fb_http_pair.
- **/
-void fb_http_cookies_set(fb_http_t *http, const fb_http_pair_t *pair, ...)
-{
-    va_list ap;
-
-    g_return_if_fail(http != NULL);
-
-    va_start(ap, pair);
-    fb_http_tree_ins(http->cookies, pair, ap);
-    va_end(ap);
-}
-
-/**
- * Parses cookies from a #fb_http_req. If a cookie already exists, it
- * is overwritten with the new value.
- *
- * @param http The #fb_http.
- * @param req  The #fb_http_req.
- **/
-void fb_http_cookies_parse_req(fb_http_t *http, const fb_http_req_t *req)
-{
+    FbHttpPrivate *hriv;
+    FbHttpRequestPrivate *priv;
     gchar **hdrs;
     gchar **kv;
-    gchar  *str;
-    gsize   i;
-    gsize   j;
+    gchar *str;
+    guint i;
+    guint j;
 
-    g_return_if_fail(http != NULL);
-    g_return_if_fail(req  != NULL);
+    g_return_if_fail(FB_IS_HTTP(http));
+    g_return_if_fail(FB_IS_HTTP_REQUEST(req));
+    hriv = http->priv;
+    priv = req->priv;
 
-    if (req->request == NULL)
+    if (priv->request == NULL) {
         return;
+    }
 
-    hdrs = g_strsplit(req->request->reply_headers, "\r\n", 0);
+    hdrs = g_strsplit(priv->request->reply_headers, "\r\n", 0);
 
     for (i = 0; hdrs[i] != NULL; i++) {
-        if (g_ascii_strncasecmp(hdrs[i], "Set-Cookie", 10) != 0)
+        if (g_ascii_strncasecmp(hdrs[i], "Set-Cookie", 10) != 0) {
             continue;
+        }
 
         str = strchr(hdrs[i], ';');
 
-        if (str != NULL)
+        if (str != NULL) {
             str[0] = 0;
+        }
 
         str = strchr(hdrs[i], ':');
 
-        if (str == NULL)
+        if (str == NULL) {
             continue;
+        }
 
         str = g_strstrip(++str);
         kv  = g_strsplit(str, "=", 2);
 
         for (j = 0; kv[j] != NULL; j++) {
-            str = fb_http_uri_unescape(kv[j]);
+            str = g_uri_unescape_string(kv[j], NULL);
             g_free(kv[j]);
             kv[j] = str;
         }
 
-        if (g_strv_length(kv) > 1)
-            fb_http_cookies_set(http, FB_HTTP_PAIR(kv[0], kv[1]), NULL);
+        if (g_strv_length(kv) > 1) {
+            fb_http_values_set_str(hriv->cookies, kv[0], kv[1]);
+        }
 
         g_strfreev(kv);
     }
@@ -197,366 +242,196 @@ void fb_http_cookies_parse_req(fb_http_t *http, const fb_http_req_t *req)
     g_strfreev(hdrs);
 }
 
-/**
- * Parses cookies from a string. If a cookie already exists, it is
- * overwritten with the new value.
- *
- * @param http The #fb_http.
- * @param data The string.
- **/
-void fb_http_cookies_parse_str(fb_http_t *http, const gchar *data)
+FbHttpRequest *
+fb_http_request_new(FbHttp *http, const gchar *url, gboolean post,
+                    FbHttpFunc func, gpointer data)
 {
-    gchar **ckis;
-    gchar **kv;
-    gchar  *str;
-    gsize   i;
-    gsize   j;
+    FbHttpPrivate *hriv;
+    FbHttpRequest *req;
+    FbHttpRequestPrivate *priv;
 
-    g_return_if_fail(http != NULL);
-    g_return_if_fail(data != NULL);
+    g_return_val_if_fail(FB_IS_HTTP(http), NULL);
+    g_return_val_if_fail(url != NULL, NULL);
+    g_return_val_if_fail(func != NULL, NULL);
 
-    ckis = g_strsplit(data, ";", 0);
+    req = g_object_new(FB_TYPE_HTTP_REQUEST, NULL);
+    priv = req->priv;
+    hriv = http->priv;
 
-    for (i = 0; ckis[i] != NULL; i++) {
-        str = g_strstrip(ckis[i]);
-        kv  = g_strsplit(str, "=", 2);
-
-        for (j = 0; kv[j] != NULL; j++) {
-            str = fb_http_uri_unescape(kv[j]);
-            g_free(kv[j]);
-            kv[j] = str;
-        }
-
-        if (g_strv_length(kv) > 1)
-            fb_http_cookies_set(http, FB_HTTP_PAIR(kv[0], kv[1]), NULL);
-
-        g_strfreev(kv);
+    if (!url_set(&priv->purl, url)) {
+        g_object_unref(req);
+        return NULL;
     }
 
-    g_strfreev(ckis);
-}
+    priv->http = http;
+    priv->url = g_strdup(url);
+    priv->post = post;
+    priv->func = func;
+    priv->data = data;
 
-/**
- * Gets a string representation of the cookies of a #fb_http. The
- * returned string should be freed with #g_free() when no longer
- * needed.
- *
- * @param http The #fb_http.
- *
- * @return The string representation of the cookies.
- **/
-gchar *fb_http_cookies_str(fb_http_t *http)
-{
-    GHashTableIter  iter;
-    GString        *gstr;
-    gchar          *key;
-    gchar          *val;
-    gchar          *str;
-
-    g_return_val_if_fail(http != NULL, NULL);
-
-    gstr = g_string_sized_new(128);
-    g_hash_table_iter_init(&iter, http->cookies);
-
-    while (g_hash_table_iter_next(&iter, (gpointer*) &key, (gpointer*) &val)) {
-        if (val == NULL)
-            val = "";
-
-        key = fb_http_uri_escape(key);
-        val = fb_http_uri_escape(val);
-
-        str = (gstr->len > 0) ? "; " : "";
-        g_string_append_printf(gstr, "%s%s=%s", str, key, val);
-
-        g_free(key);
-        g_free(val);
+    if (hriv->agent != NULL) {
+        fb_http_values_set_str(priv->headers, "User-Agent", hriv->agent);
     }
 
-    str = g_strdup(gstr->str);
-    g_string_free(gstr, TRUE);
-
-    return str;
-}
-
-/**
- * Creates a new #fb_http_req. The returned #fb_http_req should be
- * freed with #fb_http_req_free() when no longer needed.
- *
- * @param http The #fb_http.
- * @param host The hostname.
- * @param port The port number.
- * @param path The pathname.
- * @param func The user callback function or NULL.
- * @param data The user define data or NULL.
- *
- * @return The #fb_http_req or NULL on error.
- **/
-fb_http_req_t *fb_http_req_new(fb_http_t *http, const gchar *host,
-                               gint port, const gchar *path,
-                               fb_http_func_t func, gpointer data)
-{
-    fb_http_req_t *req;
-
-    req = g_new0(fb_http_req_t, 1);
-
-    req->http = http;
-    req->host = g_strdup(host);
-    req->port = port;
-    req->path = g_strdup(path);
-    req->func = func;
-    req->data = data;
-
-    req->headers = g_hash_table_new_full(g_str_hash,
-                                         (GEqualFunc) fb_util_str_iequal,
-                                         g_free, g_free);
-    req->params  = g_hash_table_new_full(g_str_hash,
-                                         (GEqualFunc) fb_util_str_iequal,
-                                         g_free, g_free);
-
-    fb_http_req_headers_set(req,
-        FB_HTTP_PAIR("User-Agent", http->agent),
-        FB_HTTP_PAIR("Host",       host),
-        FB_HTTP_PAIR("Accept",     "*/*"),
-        FB_HTTP_PAIR("Connection", "Close"),
-        NULL
-    );
+    fb_http_values_set_str(priv->headers, "Host", priv->purl.host);
+    fb_http_values_set_str(priv->headers, "Accept", "*/*");
+    fb_http_values_set_str(priv->headers, "Connection", "Close");
 
     return req;
 }
 
-/**
- * Implemented #http_input_function for nulling the callback operation.
- *
- * @param request The #http_request.
- **/
-static void fb_http_req_close_nuller(struct http_request *request)
+const gchar *
+fb_http_request_get_data(FbHttpRequest *req, gsize *size)
 {
+    FbHttpRequestPrivate *priv;
 
-}
+    g_return_val_if_fail(FB_IS_HTTP_REQUEST(req), NULL);
+    priv = req->priv;
 
-/**
- * Closes the underlying #http_request.
- *
- * @param callback TRUE to execute the callback, otherwise FALSE.
- *
- * @param req The #fb_http_req.
- **/
-static void fb_http_req_close(fb_http_req_t *req, gboolean callback)
-{
-    g_return_if_fail(req != NULL);
+    if (priv->request == NULL) {
+        if (size != NULL) {
+            *size = 0;
+        }
 
-    b_event_remove(req->toid);
-
-    if ((req->err == NULL) && (req->scode == 0)) {
-        g_set_error(&req->err, FB_HTTP_ERROR, FB_HTTP_ERROR_CLOSED,
-                    "Request closed");
+        return NULL;
     }
 
-    if (callback && (req->func != NULL))
-        req->func(req, req->data);
-
-    if (req->request != NULL) {
-        /* Prevent more than one call to request->func() */
-        req->request->func = fb_http_req_close_nuller;
-        req->request->data = NULL;
-
-        if (!(req->request->flags & FB_HTTP_CLIENT_FREED))
-            http_close(req->request);
+    if (size != NULL) {
+        *size = priv->request->body_size;
     }
 
-    req->status    = NULL;
-    req->scode     = 0;
-    req->header    = NULL;
-    req->body      = NULL;
-    req->body_size = 0;
-    req->toid      = 0;
-    req->request   = NULL;
+    return priv->request->reply_body;
 }
 
-/**
- * Frees all memory used by a #fb_http_req.
- *
- * @param req The #fb_http_req.
- **/
-void fb_http_req_free(fb_http_req_t *req)
+FbHttpValues *
+fb_http_request_get_headers(FbHttpRequest *req)
 {
-    if (G_UNLIKELY(req == NULL))
-        return;
+    FbHttpRequestPrivate *priv;
 
-    fb_http_req_close(req, TRUE);
+    g_return_val_if_fail(FB_IS_HTTP_REQUEST(req), NULL);
+    priv = req->priv;
 
-    if (req->err != NULL)
-        g_error_free(req->err);
-
-    g_hash_table_destroy(req->headers);
-    g_hash_table_destroy(req->params);
-
-    g_free(req->path);
-    g_free(req->host);
-    g_free(req);
+    return priv->headers;
 }
 
-#ifdef DEBUG_FACEBOOK
-static void fb_http_req_debug(fb_http_req_t *req, gboolean response,
-                              const gchar *header, const gchar *body)
+FbHttpValues *
+fb_http_request_get_params(FbHttpRequest *req)
 {
-    const gchar  *act;
-    const gchar  *type;
-    const gchar  *prot;
-    gchar        *str;
-    gchar       **ls;
-    guint         i;
+    FbHttpRequestPrivate *priv;
 
-    if (req->err != NULL)
-        str = g_strdup_printf(" (%s)", req->err->message);
-    else if (req->status != NULL)
-        str = g_strdup_printf(" (%s)", req->status);
-    else
+    g_return_val_if_fail(FB_IS_HTTP_REQUEST(req), NULL);
+    priv = req->priv;
+
+    return priv->params;
+}
+
+const gchar *
+fb_http_request_get_status(FbHttpRequest *req, gint *code)
+{
+    FbHttpRequestPrivate *priv;
+
+    g_return_val_if_fail(FB_IS_HTTP_REQUEST(req), NULL);
+    priv = req->priv;
+
+    if (priv->request == NULL) {
+        if (code != NULL) {
+            *code = 0;
+        }
+
+        return NULL;
+    }
+
+    if (code != NULL) {
+        *code = priv->request->status_code;
+    }
+
+    return priv->request->status_string;
+}
+
+GError *
+fb_http_request_take_error(FbHttpRequest *req)
+{
+    FbHttpRequestPrivate *priv;
+    GError *err;
+
+    g_return_val_if_fail(FB_IS_HTTP_REQUEST(req), NULL);
+    priv = req->priv;
+
+    err = priv->error;
+    priv->error = NULL;
+
+    return err;
+}
+
+static void
+fb_http_request_debug(FbHttpRequest *req, gboolean response,
+                      const gchar *header, const gchar *body)
+{
+    const gchar *action;
+    const gchar *method;
+    const gchar *status;
+    FbHttpRequestPrivate *priv = req->priv;
+    gchar **lines;
+    gchar *str;
+    gint code;
+    guint i;
+
+    status = fb_http_request_get_status(req, &code);
+    action = response ? "Response" : "Request";
+    method = priv->post ? "POST" : "GET";
+
+    if (status != NULL) {
+        str = g_strdup_printf(" (%s)", status);
+    } else if (response) {
+        str = g_strdup_printf(" (%d)", code);
+    } else {
         str = g_strdup("");
+    }
 
-    act  = response ? "Response" : "Request";
-    type = (req->flags & FB_HTTP_REQ_FLAG_POST) ? "POST"  : "GET";
-    prot = (req->flags & FB_HTTP_REQ_FLAG_SSL)  ? "https" : "http";
-
-    FB_UTIL_DEBUGLN("%s %s (%p): %s://%s:%d%s%s",
-                    type, act, req, prot,
-                    req->host, req->port,
-                    req->path, str);
+    fb_util_debug_info("%s %s (%p): %s%s",
+                       method, action, req,
+                       priv->url, str);
     g_free(str);
 
-    if (req->rsc > 0)
-        FB_UTIL_DEBUGLN("Reattempt: #%u", req->rsc);
-
     if ((header != NULL) && (strlen(header) > 0)) {
-        ls = g_strsplit(header, "\n", 0);
+        lines = g_strsplit(header, "\n", 0);
 
-        for (i = 0; ls[i] != NULL; i++)
-            FB_UTIL_DEBUGLN("  %s", ls[i]);
+        for (i = 0; lines[i] != NULL; i++) {
+            fb_util_debug_info("  %s", lines[i]);
+        }
 
-        g_strfreev(ls);
+        g_strfreev(lines);
     } else {
-        FB_UTIL_DEBUGLN("  ** No header data **");
-        FB_UTIL_DEBUGLN("");
+        fb_util_debug_info("  ** No header data **");
+        fb_util_debug_info("%s", "");
     }
 
     if ((body != NULL) && (strlen(body) > 0)) {
-        ls = g_strsplit(body, "\n", 0);
+        lines = g_strsplit(body, "\n", 0);
 
-        for (i = 0; ls[i] != NULL; i++)
-            FB_UTIL_DEBUGLN("  %s", ls[i]);
-
-        g_strfreev(ls);
-    } else {
-        FB_UTIL_DEBUGLN("  ** No body data **");
-    }
-}
-#endif /* DEBUG_FACEBOOK */
-
-/**
- * Sets headers from #fb_http_pair. If a header already exists, it is
- * overwritten with the new value.
- *
- * @param req  The #fb_http_req.
- * @param pair The first #fb_http_pair.
- * @param ...  The additional #fb_http_pair.
- **/
-void fb_http_req_headers_set(fb_http_req_t *req, const fb_http_pair_t *pair,
-                             ...)
-{
-    va_list ap;
-
-    g_return_if_fail(req != NULL);
-
-    va_start(ap, pair);
-    fb_http_tree_ins(req->headers, pair, ap);
-    va_end(ap);
-}
-
-/**
- * Sets parameters from #fb_http_pair. If a parameter already exists,
- * it is overwritten with the new value.
- *
- * @param req  The #fb_http_req.
- * @param pair The first #fb_http_pair.
- * @param ...  The additional #fb_http_pair.
- **/
-void fb_http_req_params_set(fb_http_req_t *req, const fb_http_pair_t *pair,
-                            ...)
-{
-    va_list ap;
-
-    g_return_if_fail(req != NULL);
-
-    va_start(ap, pair);
-    fb_http_tree_ins(req->params, pair, ap);
-    va_end(ap);
-}
-
-/**
- * Implemented #b_event_handler for resending failed a #fb_http_req.
- *
- * @param data The user defined data, which is a #fb_http_req.
- * @param fd   The file descriptor.
- * @param cond The #b_input_condition.
- *
- * @return FALSE to kill the timer.
- **/
-static gboolean fb_http_req_done_error(gpointer data, gint fd,
-                                       b_input_condition cond)
-{
-    fb_http_req_t *req = data;
-
-    fb_http_req_send(req);
-    return FALSE;
-}
-
-/**
- * Processes all #fb_http_req by resending, queuing, and freeing.
- *
- * @param req The #fb_http_req.
- **/
-static void fb_http_req_done(fb_http_req_t *req)
-{
-#ifdef DEBUG_FACEBOOK
-    fb_http_req_debug(req, TRUE, req->header, req->body);
-#endif /* DEBUG_FACEBOOK */
-
-    if (req->err != NULL) {
-        if (req->rsc < FB_HTTP_RESEND_MAX) {
-            fb_http_req_close(req, FALSE);
-            g_error_free(req->err);
-            req->err = NULL;
-
-            req->toid = b_timeout_add(FB_HTTP_RESEND_TIMEOUT,
-                                      fb_http_req_done_error, req);
-            req->rsc++;
-            return;
+        for (i = 0; lines[i] != NULL; i++) {
+            fb_util_debug_info("  %s", lines[i]);
         }
 
-        g_prefix_error(&req->err, "HTTP: ");
+        g_strfreev(lines);
+    } else {
+        fb_util_debug_info("  ** No body data **");
     }
-
-    g_hash_table_remove(req->http->reqs, req);
-    fb_http_req_free(req);
 }
 
-/**
- * Implemented #http_input_function for all #fb_http_req.
- *
- * @param request The #http_request.
- **/
-static void fb_http_req_cb(struct http_request *request)
+static void
+fb_http_request_cb(struct http_request *request)
 {
-    fb_http_req_t *req = request->data;
+    const gchar *status;
+    FbHttpRequest *req = request->data;
+    FbHttpRequestPrivate *priv = req->priv;
+    gint code;
 
-    /* Shortcut request elements */
-    req->status    = request->status_string;
-    req->scode     = request->status_code;
-    req->header    = request->reply_headers;
-    req->body      = request->reply_body;
-    req->body_size = request->body_size;
+    status = fb_http_request_get_status(req, &code);
+    g_hash_table_remove(priv->http->priv->reqs, req);
+    priv->freed = TRUE;
 
-    switch (req->scode) {
+    switch (code) {
     case 200:
     case 301:
     case 302:
@@ -565,200 +440,427 @@ static void fb_http_req_cb(struct http_request *request)
         break;
 
     default:
-        g_set_error(&req->err, FB_HTTP_ERROR, req->scode, "%s", req->status);
+        g_set_error(&priv->error, FB_HTTP_ERROR, code, "%s", status);
     }
 
-    req->request->flags |= FB_HTTP_CLIENT_FREED;
-    fb_http_req_done(req);
+    fb_http_request_debug(req, TRUE, priv->request->reply_headers,
+                          priv->request->reply_body);
+
+    if (G_LIKELY(priv->func != NULL)) {
+        priv->func(req, priv->data);
+    }
+
+    g_object_unref(req);
 }
 
-/**
- * Implemented #b_event_handler for handling a timed out #fb_http_req.
- *
- * @param data The user defined data, which is a #fb_http_req.
- * @param fd   The file descriptor.
- * @param cond The #b_input_condition.
- *
- * @return FALSE to kill the timer.
- **/
-static gboolean fb_http_req_send_timeout(gpointer data, gint fd,
-                                         b_input_condition cond)
+void
+fb_http_request_send(FbHttpRequest *req)
 {
-    fb_http_req_t *req = data;
-
-    g_set_error(&req->err, FB_HTTP_ERROR, FB_HTTP_ERROR_TIMEOUT,
-                "Request timed out");
-
-    req->toid = 0;
-    fb_http_req_done(req);
-    return FALSE;
-}
-
-/**
- * Assembles a #fb_http_req. The returned strings should be freed with
- * #g_free() when no longer needed.
- *
- * @param req The #fb_http_req.
- * @param hs  The return location for the header string.
- * @param ps  The return location for the param string.
- * @param fs  The return location for the full string.
- **/
-static void fb_http_req_asm(fb_http_req_t *req, gchar **hs, gchar **ps,
-                            gchar **fs)
-{
-    GHashTableIter  iter;
-    GString        *hgs;
-    GString        *pgs;
-    gchar          *str;
-    gchar          *key;
-    gchar          *val;
-
-    g_hash_table_iter_init(&iter, req->params);
-    pgs = g_string_sized_new(128);
-
-    while (g_hash_table_iter_next(&iter, (gpointer*) &key, (gpointer*) &val)) {
-        if (val == NULL)
-            val = "";
-
-        key = fb_http_uri_escape(key);
-        val = fb_http_uri_escape(val);
-
-        str = (pgs->len > 0) ? "&" : "";
-        g_string_append_printf(pgs, "%s%s=%s", str, key, val);
-
-        g_free(key);
-        g_free(val);
-    }
-
-    if (g_hash_table_size(req->http->cookies) > 0) {
-        str = fb_http_cookies_str(req->http);
-        fb_http_req_headers_set(req, FB_HTTP_PAIR("Cookie", str), NULL);
-        g_free(str);
-    }
-
-    if (req->flags & FB_HTTP_REQ_FLAG_POST) {
-        str = g_strdup_printf("%" G_GSIZE_FORMAT, pgs->len);
-
-        fb_http_req_headers_set(req,
-            FB_HTTP_PAIR("Content-Type",   "application/"
-                                           "x-www-form-urlencoded"),
-            FB_HTTP_PAIR("Content-Length", str),
-            NULL
-        );
-
-        g_free(str);
-    }
-
-    g_hash_table_iter_init(&iter, req->headers);
-    hgs = g_string_sized_new(128);
-
-    while (g_hash_table_iter_next(&iter, (gpointer*) &key, (gpointer*) &val)) {
-        if (val == NULL)
-            val = "";
-
-        g_string_append_printf(hgs, "%s: %s\r\n", key, val);
-    }
-
-    if (req->flags & FB_HTTP_REQ_FLAG_POST) {
-        *fs = g_strdup_printf("POST %s HTTP/1.1\r\n%s\r\n%s",
-                              req->path, hgs->str, pgs->str);
-    } else {
-        *fs = g_strdup_printf("GET %s?%s HTTP/1.1\r\n%s\r\n",
-                              req->path, pgs->str, hgs->str);
-    }
-
-    *hs = g_string_free(hgs, FALSE);
-    *ps = g_string_free(pgs, FALSE);
-}
-
-/**
- * Sends a #fb_http_req.
- *
- * @param req The #fb_http_req.
- **/
-void fb_http_req_send(fb_http_req_t *req)
-{
+    FbHttpPrivate *hriv;
+    FbHttpRequestPrivate *priv;
+    gchar *hdrs;
+    gchar *prms;
     gchar *str;
-    gchar *hs;
-    gchar *ps;
+    gsize size;
 
-    g_return_if_fail(req != NULL);
+    g_return_if_fail(FB_IS_HTTP_REQUEST(req));
+    priv = req->priv;
+    hriv = priv->http->priv;
 
-    fb_http_req_asm(req, &hs, &ps, &str);
+    if (g_hash_table_size(hriv->cookies) > 0) {
+        str = fb_http_values_str_cookies(hriv->cookies);
+        fb_http_values_set_str(priv->headers, "Cookie", str);
+        g_free(str);
+    }
 
-#ifdef DEBUG_FACEBOOK
-    fb_http_req_debug(req, FALSE, hs, ps);
-#endif /* DEBUG_FACEBOOK */
+    prms = fb_http_values_str_params(priv->params, NULL);
 
-    req->request = http_dorequest(req->host, req->port,
-                                  (req->flags & FB_HTTP_REQ_FLAG_SSL),
-                                  str, fb_http_req_cb, req);
-    g_hash_table_add(req->http->reqs, req);
+    if (priv->post) {
+        size = strlen(prms);
+        fb_http_values_set_strf(priv->headers, "Content-Length",
+                                "%" G_GSIZE_FORMAT, size);
+        fb_http_values_set_str(priv->headers, "Content-Type",
+                               "application/x-www-form-urlencoded");
+    }
 
-    g_free(hs);
-    g_free(ps);
+    hdrs = fb_http_values_str_headers(priv->headers);
+
+    if (priv->post) {
+        str = g_strdup_printf("POST %s HTTP/1.1\r\n%s\r\n%s",
+                              priv->purl.file, hdrs, prms);
+    } else {
+        str = g_strdup_printf("GET %s?%s HTTP/1.1\r\n%s\r\n",
+                              priv->purl.file, prms, hdrs);
+    }
+
+    fb_http_request_debug(req, FALSE, hdrs, prms);
+    priv->request = http_dorequest(priv->purl.host, priv->purl.port,
+                                   priv->purl.proto == PROTO_HTTPS,
+                                   str, fb_http_request_cb, req);
+
+    g_free(hdrs);
+    g_free(prms);
     g_free(str);
 
-    if (G_UNLIKELY(req->request == NULL)) {
-        g_set_error(&req->err, FB_HTTP_ERROR, FB_HTTP_ERROR_INIT,
+    if (G_UNLIKELY(priv->request == NULL)) {
+        g_set_error(&priv->error, FB_HTTP_ERROR, FB_HTTP_ERROR_INIT,
                     "Failed to init request");
-        fb_http_req_done(req);
+
+        if (G_LIKELY(priv->func != NULL)) {
+            priv->func(req, priv->data);
+        }
+
+        g_object_unref(req);
         return;
     }
 
-    /* Prevent automatic redirection */
-    req->request->redir_ttl = 0;
+    g_hash_table_replace(hriv->reqs, req, req);
+}
 
-    if (req->timeout > 0) {
-        req->toid = b_timeout_add(req->timeout, fb_http_req_send_timeout,
-                                  req);
+gboolean
+fb_http_urlcmp(const gchar *url1, const gchar *url2, gboolean protocol)
+{
+    gboolean ret;
+    url_t purl1;
+    url_t purl2;
+
+    if ((url1 == NULL) || (url2 == NULL)) {
+        return url1 == url2;
     }
-}
 
-/**
- * Escapes the characters of a string to make it URL safe. The returned
- * string should be freed with #g_free() when no longer needed.
- *
- * @param unescaped The string.
- *
- * @return The escaped string or NULL on error.
- **/
-gchar *fb_http_uri_escape(const gchar *unescaped)
-{
-    gchar *ret;
-    gchar *str;
+    if (!url_set(&purl1, url1) || !url_set(&purl2, url2)) {
+        return g_ascii_strcasecmp(url1, url2) == 0;
+    }
 
-    g_return_val_if_fail(unescaped != NULL, NULL);
+    ret = (g_ascii_strcasecmp(purl1.host, purl2.host) == 0) &&
+          (g_strcmp0(purl1.file, purl2.file) == 0) &&
+          (g_strcmp0(purl1.user, purl2.user) == 0) &&
+          (g_strcmp0(purl1.pass, purl2.pass) == 0);
 
-    str = g_strndup(unescaped, (strlen(unescaped) * 3) + 1);
-    http_encode(str);
-
-    ret = g_strdup(str);
-    g_free(str);
+    if (ret && protocol) {
+        ret = (purl1.proto == purl2.proto) && (purl1.port == purl2.port);
+    }
 
     return ret;
 }
 
-/**
- * Unescapes the characters of a string to make it a normal string. The
- * returned string should be freed with #g_free() when no longer needed.
- *
- * @param escaped The string.
- *
- * @return The unescaped string or NULL on error.
- **/
-gchar *fb_http_uri_unescape(const gchar *escaped)
+static gboolean
+fb_http_value_equal(gconstpointer a, gconstpointer b)
 {
-    gchar *ret;
-    gchar *str;
+    return g_ascii_strcasecmp(a, b) == 0;
+}
 
-    g_return_val_if_fail(escaped != NULL, NULL);
+FbHttpValues *
+fb_http_values_new(void)
+{
+        return g_hash_table_new_full(g_str_hash, fb_http_value_equal,
+                                     g_free, g_free);
+}
 
-    str = g_strdup(escaped);
-    http_decode(str);
+void
+fb_http_values_free(FbHttpValues *values)
+{
+    g_hash_table_destroy(values);
+}
 
-    ret = g_strdup(str);
-    g_free(str);
+void
+fb_http_values_consume(FbHttpValues *values, FbHttpValues *consume)
+{
+    GHashTableIter iter;
+    gpointer key;
+    gpointer val;
+
+    g_hash_table_iter_init(&iter, consume);
+
+    while (g_hash_table_iter_next(&iter, &key, &val)) {
+        g_hash_table_iter_steal(&iter);
+        g_hash_table_replace(values, key, val);
+    }
+
+    g_hash_table_destroy(consume);
+}
+
+void
+fb_http_values_parse(FbHttpValues *values, const gchar *data, gboolean isurl)
+{
+    const gchar *tail;
+    gchar *key;
+    gchar **params;
+    gchar *val;
+    guint i;
+
+    g_return_if_fail(data != NULL);
+
+    if (isurl) {
+        data = strchr(data, '?');
+
+        if (data++ == NULL) {
+            return;
+        }
+
+        tail = strchr(data, '#');
+
+        if (tail != NULL) {
+            data = g_strndup(data, tail - data);
+        } else {
+            data = g_strdup(data);
+        }
+    }
+
+    params = g_strsplit(data, "&", 0);
+
+    for (i = 0; params[i] != NULL; i++) {
+        key = params[i];
+        val = strchr(params[i], '=');
+
+        if (val == NULL) {
+            continue;
+        }
+
+        *(val++) = 0;
+        key = g_uri_unescape_string(key, NULL);
+        val = g_uri_unescape_string(val, NULL);
+        g_hash_table_replace(values, key, val);
+    }
+
+    if (isurl) {
+        g_free((gchar*) data);
+    }
+
+    g_strfreev(params);
+}
+
+gchar *
+fb_http_values_str_cookies(FbHttpValues *values)
+{
+    GHashTableIter iter;
+    gchar *key;
+    gchar *val;
+    GString *ret;
+
+    ret = g_string_new(NULL);
+    g_hash_table_iter_init(&iter, values);
+
+    while (g_hash_table_iter_next(&iter, (gpointer) &key, (gpointer) &val)) {
+        if (val == NULL) {
+            val = "";
+        }
+
+        if (ret->len > 0) {
+            g_string_append(ret, "; ");
+        }
+
+        g_string_append_uri_escaped(ret, key, NULL, TRUE);
+        g_string_append_c(ret, '=');
+        g_string_append_uri_escaped(ret, val, NULL, TRUE);
+    }
+
+    return g_string_free(ret, FALSE);
+}
+
+gchar *
+fb_http_values_str_headers(FbHttpValues *values)
+{
+    GHashTableIter iter;
+    gchar *key;
+    gchar *val;
+    GString *ret;
+
+    ret = g_string_new(NULL);
+    g_hash_table_iter_init(&iter, values);
+
+    while (g_hash_table_iter_next(&iter, (gpointer) &key, (gpointer) &val)) {
+        if (val == NULL) {
+            val = "";
+        }
+
+        g_string_append_printf(ret, "%s: %s\r\n", key, val);
+    }
+
+    return g_string_free(ret, FALSE);
+}
+
+gchar *
+fb_http_values_str_params(FbHttpValues *values, const gchar *url)
+{
+    GHashTableIter iter;
+    gchar *key;
+    gchar *val;
+    GString *ret;
+
+    ret = g_string_new(NULL);
+    g_hash_table_iter_init(&iter, values);
+
+    while (g_hash_table_iter_next(&iter, (gpointer) &key, (gpointer) &val)) {
+        if (val == NULL) {
+            val = "";
+        }
+
+        if (ret->len > 0) {
+            g_string_append_c(ret, '&');
+        }
+
+        g_string_append_uri_escaped(ret, key, NULL, TRUE);
+        g_string_append_c(ret, '=');
+        g_string_append_uri_escaped(ret, val, NULL, TRUE);
+    }
+
+    if (url != NULL) {
+        g_string_prepend_c(ret, '?');
+        g_string_prepend(ret, url);
+    }
+
+    return g_string_free(ret, FALSE);
+}
+
+gboolean
+fb_http_values_remove(FbHttpValues *values, const gchar *name)
+{
+    return g_hash_table_remove(values, name);
+}
+
+GList *
+fb_http_values_get_keys(FbHttpValues *values)
+{
+    return g_hash_table_get_keys(values);
+}
+
+static const gchar *
+fb_http_values_get(FbHttpValues *values, const gchar *name, GError **error)
+{
+    const gchar *ret;
+
+    ret = g_hash_table_lookup(values, name);
+
+    if (ret == NULL) {
+        g_set_error(error, FB_HTTP_ERROR, FB_HTTP_ERROR_NOMATCH,
+                    "No matches for %s", name);
+        return NULL;
+    }
 
     return ret;
+}
+
+gboolean
+fb_http_values_get_bool(FbHttpValues *values, const gchar *name,
+                       GError **error)
+{
+    const gchar *val;
+
+    val = fb_http_values_get(values, name, error);
+
+    if (val == NULL) {
+        return FALSE;
+    }
+
+    return bool2int((gchar *) name);
+}
+
+gdouble
+fb_http_values_get_dbl(FbHttpValues *values, const gchar *name,
+                      GError **error)
+{
+    const gchar *val;
+
+    val = fb_http_values_get(values, name, error);
+
+    if (val == NULL) {
+        return 0.0;
+    }
+
+    return g_ascii_strtod(val, NULL);
+}
+
+gint64
+fb_http_values_get_int(FbHttpValues *values, const gchar *name,
+                       GError **error)
+{
+    const gchar *val;
+
+    val = fb_http_values_get(values, name, error);
+
+    if (val == NULL) {
+        return 0;
+    }
+
+    return g_ascii_strtoll(val, NULL, 10);
+}
+
+
+const gchar *
+fb_http_values_get_str(FbHttpValues *values, const gchar *name,
+                       GError **error)
+{
+    return fb_http_values_get(values, name, error);
+}
+
+gchar *
+fb_http_values_dup_str(FbHttpValues *values, const gchar *name,
+                       GError **error)
+{
+    const gchar *str;
+
+    str = fb_http_values_get_str(values, name, error);
+    return g_strdup(str);
+}
+
+static void
+fb_http_values_set(FbHttpValues *values, const gchar *name, gchar *value)
+{
+    gchar *key;
+
+    key = g_strdup(name);
+    g_hash_table_replace(values, key, value);
+}
+
+void
+fb_http_values_set_bool(FbHttpValues *values, const gchar *name,
+                        gboolean value)
+{
+    gchar *val;
+
+    val = g_strdup(value ? "true" : "false");
+    fb_http_values_set(values, name, val);
+}
+
+void
+fb_http_values_set_dbl(FbHttpValues *values, const gchar *name, gdouble value)
+{
+    gchar *val;
+
+    val = g_strdup_printf("%f", value);
+    fb_http_values_set(values, name, val);
+}
+
+void
+fb_http_values_set_int(FbHttpValues *values, const gchar *name, gint64 value)
+{
+    gchar *val;
+
+    val = g_strdup_printf("%" G_GINT64_FORMAT, value);
+    fb_http_values_set(values, name, val);
+}
+
+void
+fb_http_values_set_str(FbHttpValues *values, const gchar *name,
+                       const gchar *value)
+{
+    gchar *val;
+
+    val = g_strdup(value);
+    fb_http_values_set(values, name, val);
+}
+
+void
+fb_http_values_set_strf(FbHttpValues *values, const gchar *name,
+                        const gchar *format, ...)
+{
+    gchar *val;
+    va_list ap;
+
+    va_start(ap, format);
+    val = g_strdup_vprintf(format, ap);
+    va_end(ap);
+
+    fb_http_values_set(values, name, val);
 }

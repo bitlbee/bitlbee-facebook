@@ -1,0 +1,39 @@
+{
+    leak:conf_load
+    Memcheck:Leak
+    ...
+    fun:conf_load
+    fun:main
+}
+
+{
+    leak:gobject_init_ctor
+    Memcheck:Leak
+    match-leak-kinds: possible
+    ...
+    fun:gobject_init_ctor
+}
+
+{
+    leak:g_signal_new
+    Memcheck:Leak
+    match-leak-kinds: possible
+    ...
+    fun:g_signal_new
+}
+
+{
+    leak:g_type_create_instance
+    Memcheck:Leak
+    match-leak-kinds: possible
+    ...
+    fun:g_type_create_instance
+}
+
+{
+    leak:g_type_register_static
+    Memcheck:Leak
+    match-leak-kinds: possible
+    ...
+    fun:g_type_register_static
+}

@@ -3,14 +3,14 @@ Maintainer: jgeboski <jgeboski@gmail.com>
 Section: misc
 Priority: optional
 Standards-Version: 3.9.6
-Build-Depends: debhelper (>= 9), dh-autoreconf, libglib2.0-dev (>= 2.32), bitlbee-dev (>= 3.2.2), zlib1g-dev
+Build-Depends: bitlbee-dev (>= 3.2.2), debhelper (>= 9), dh-autoreconf, libglib2.0-dev (>= 2.32), libjson-glib-dev (>= 0.14), zlib1g-dev
 Homepage: https://github.com/jgeboski/bitlbee-facebook
 
 Package: bitlbee-facebook
 Architecture: any
 Section: misc
 Priority: optional
-Depends: ${shlibs:Depends}, ${misc:Depends}, bitlbee (>= 3.2.2) | bitlbee-libpurple (>= 3.2.2)
+Depends: ${shlibs:Depends}, ${misc:Depends}, bitlbee (>= 3.2.2) | bitlbee-libpurple (>= 3.2.2), libglib2.0-0 (>= 2.32), libjson-glib-1.0-0 (>= 0.14), zlib1g
 Homepage: https://github.com/jgeboski/bitlbee-facebook
 Description: Facebook protocol plugin for BitlBee
  BitlBee Facebook implements the Facebook Messenger protocol into

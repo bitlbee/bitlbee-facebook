@@ -19,425 +19,298 @@
 
 #include "facebook-thrift.h"
 
-/**
- * Creates a new #fb_thrift. The returned #fb_thrift should be freed
- * with #fb_thrift_free() when no longer needed. If #GByteArray passed
- * to this function is not NULL, then it MUST exist for the lifetime
- * of the #fb_thrift.
- *
- * @param bytes   The #GByteArray or NULL.
- * @param offset  The data offset.
- * @param compact TRUE for compact types.
- *
- * @return The #fb_thrift or NULL on error.
- **/
-fb_thrift_t *fb_thrift_new(GByteArray *bytes, guint offset, gboolean compact)
+struct _FbThriftPrivate
 {
-    fb_thrift_t *thft;
+    GByteArray *bytes;
+    gboolean internal;
+    guint offset;
+    guint pos;
+    guint lastbool;
+    gint16 lastid;
+};
 
-    thft = g_new0(fb_thrift_t, 1);
+G_DEFINE_TYPE(FbThrift, fb_thrift, G_TYPE_OBJECT);
 
-    if (bytes == NULL) {
-        thft->bytes  = g_byte_array_new();
-        thft->flags |= FB_THRIFT_FLAG_INTERNAL;
+static void
+fb_thrift_dispose(GObject *obj)
+{
+    FbThriftPrivate *priv = FB_THRIFT(obj)->priv;
+
+    if (priv->internal) {
+        g_byte_array_free(priv->bytes, TRUE);
+    }
+}
+
+static void
+fb_thrift_class_init(FbThriftClass *klass)
+{
+    GObjectClass *gklass = G_OBJECT_CLASS(klass);
+
+    gklass->dispose = fb_thrift_dispose;
+    g_type_class_add_private(klass, sizeof (FbThriftPrivate));
+}
+
+static void
+fb_thrift_init(FbThrift *thft)
+{
+    FbThriftPrivate *priv;
+
+    priv = G_TYPE_INSTANCE_GET_PRIVATE(thft, FB_TYPE_THRIFT,
+                                       FbThriftPrivate);
+    thft->priv = priv;
+}
+
+FbThrift *
+fb_thrift_new(GByteArray *bytes, guint offset)
+{
+    FbThrift *thft;
+    FbThriftPrivate *priv;
+
+    thft = g_object_new(FB_TYPE_THRIFT, NULL);
+    priv = thft->priv;
+
+    if (bytes != NULL) {
+        priv->bytes = bytes;
+        priv->offset = offset;
+        priv->pos = offset;
     } else {
-        thft->bytes  = bytes;
-        thft->offset = offset;
+        priv->bytes = g_byte_array_new();
+        priv->internal = TRUE;
     }
 
-    if (compact)
-        thft->flags |= FB_THRIFT_FLAG_COMPACT;
-
-    thft->pos = thft->offset;
     return thft;
 }
 
-/**
- * Frees all memory used by a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- **/
-void fb_thrift_free(fb_thrift_t *thft)
+const GByteArray *
+fb_thrift_get_bytes(FbThrift *thft)
 {
-    if (G_UNLIKELY(thft == NULL))
-        return;
+    FbThriftPrivate *priv;
 
-    if (thft->flags & FB_THRIFT_FLAG_INTERNAL)
-        g_byte_array_free(thft->bytes, TRUE);
-
-    g_free(thft);
+    g_return_val_if_fail(FB_IS_THRIFT(thft), NULL);
+    priv = thft->priv;
+    return priv->bytes;
 }
 
-/**
- * Frees all memory used by a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- **/
-void fb_thrift_reset(fb_thrift_t *thft)
+guint
+fb_thrift_get_pos(FbThrift *thft)
 {
-    g_return_if_fail(thft != NULL);
+    FbThriftPrivate *priv;
 
-    thft->pos = thft->offset;
+    g_return_val_if_fail(FB_IS_THRIFT(thft), 0);
+    priv = thft->priv;
+    return priv->pos;
 }
 
-/**
- * Reads raw data from a #fb_thrift. If the return location is NULL,
- * only the cursor is advanced.
- *
- * @param thft The #fb_thrift.
- * @param data The data buffer or NULL.
- * @param size The size of data to read.
- *
- * @return TRUE if the data was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read(fb_thrift_t *thft, gpointer data, guint size)
+void
+fb_thrift_set_pos(FbThrift *thft, guint pos)
 {
-    g_return_val_if_fail(thft != NULL, FALSE);
+    FbThriftPrivate *priv;
 
-    if ((thft->pos + size) > thft->bytes->len)
+    g_return_if_fail(FB_IS_THRIFT(thft));
+    priv = thft->priv;
+    priv->pos = pos;
+}
+
+void
+fb_thrift_reset(FbThrift *thft)
+{
+    FbThriftPrivate *priv;
+
+    g_return_if_fail(FB_IS_THRIFT(thft));
+    priv = thft->priv;
+    priv->pos = priv->offset;
+}
+
+gboolean
+fb_thrift_read(FbThrift *thft, gpointer data, guint size)
+{
+    FbThriftPrivate *priv;
+
+    g_return_val_if_fail(FB_IS_THRIFT(thft), FALSE);
+    priv = thft->priv;
+
+    if ((priv->pos + size) > priv->bytes->len) {
         return FALSE;
+    }
 
-    if ((data != NULL) && (size > 0))
-        memcpy(data, thft->bytes->data + thft->pos, size);
+    if ((data != NULL) && (size > 0)) {
+        memcpy(data, priv->bytes->data + priv->pos, size);
+    }
 
-    thft->pos += size;
+    priv->pos += size;
     return TRUE;
 }
 
-/**
- * Reads a boolean from a #fb_thrift. If the return location is NULL,
- * only the cursor is advanced.
- *
- * @param thft The #fb_thrift.
- * @param bln  The return location for the boolean or NULL.
- *
- * @return TRUE if the boolean was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_bool(fb_thrift_t *thft, gboolean *bln)
+gboolean
+fb_thrift_read_bool(FbThrift *thft, gboolean *value)
 {
+    FbThriftPrivate *priv;
     guint8 byte;
 
-    g_return_val_if_fail(thft != NULL, FALSE);
+    g_return_val_if_fail(FB_IS_THRIFT(thft), FALSE);
+    priv = thft->priv;
 
-    if (bln != NULL)
-        *bln = FALSE;
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        if (!fb_thrift_read_byte(thft, &byte))
+    if ((priv->lastbool & 0x03) != 0x01) {
+        if (!fb_thrift_read_byte(thft, &byte)) {
             return FALSE;
+        }
 
-        if (bln != NULL)
-            *bln = byte != 0;
+        if (value != NULL) {
+            *value = (byte & 0x0F) == 0x01;
+        }
 
+        priv->lastbool = 0;
         return TRUE;
     }
 
-    if ((thft->lastbool & 0x03) != 0x01) {
-        if (!fb_thrift_read_byte(thft, &byte))
-            return FALSE;
-
-        if (bln != NULL)
-            *bln = (byte & 0x0F) == 0x01;
-
-        return TRUE;
+    if (value != NULL) {
+        *value = ((priv->lastbool & 0x04) >> 2) != 0;
     }
 
-    if (bln != NULL)
-        *bln = ((thft->lastbool & 0x04) >> 2) != 0;
-
-    thft->lastbool = 0;
+    priv->lastbool = 0;
     return TRUE;
 }
 
-/**
- * Reads a single byte from a #fb_thrift. If the return location is
- * NULL, only the cursor is advanced.
- *
- * @param thft The #fb_thrift.
- * @param byte The return location for the byte or NULL.
- *
- * @return TRUE if the byte was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_byte(fb_thrift_t *thft, guint8 *byte)
+gboolean
+fb_thrift_read_byte(FbThrift *thft, guint8 *value)
 {
-    if (byte != NULL)
-        *byte = 0;
-
-    return fb_thrift_read(thft, byte, sizeof *byte);
+    return fb_thrift_read(thft, value, sizeof *value);
 }
 
-/**
- * Reads a double from a #fb_thrift. If the return location is NULL,
- * only the cursor is advanced.
- *
- * @param thft The #fb_thrift.
- * @param dbl  The return location for the double or NULL.
- *
- * @return TRUE if the double was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_dbl(fb_thrift_t *thft, gdouble *dbl)
+gboolean
+fb_thrift_read_dbl(FbThrift *thft, gdouble *value)
 {
     gint64 i64;
 
     /* Almost always 8, but check anyways */
-    static const gsize size = MIN(sizeof dbl, sizeof i64);
+    static const gsize size = MIN(sizeof value, sizeof i64);
 
-    if (dbl != NULL)
-        *dbl = 0;
-
-    if (!fb_thrift_read_i64(thft, &i64))
+    if (!fb_thrift_read_i64(thft, &i64)) {
         return FALSE;
+    }
 
-    if (dbl != NULL)
-        memcpy(&dbl, &i64, size);
+    if (value != NULL) {
+        memcpy(value, &i64, size);
+    }
 
     return TRUE;
 }
 
-/**
- * Reads a 16-bit integer from a #fb_thrift. If the #fb_thrift is in
- * compact mode, this will convert the integer from the zigzag format
- * after reading. If the return location is NULL, only the cursor is
- * advanced.
- *
- * @param thft The #fb_thrift.
- * @param i16  The return location for the integer or NULL.
- *
- * @return TRUE if the integer was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_i16(fb_thrift_t *thft, gint16 *i16)
+gboolean
+fb_thrift_read_i16(FbThrift *thft, gint16 *value)
 {
     gint64 i64;
 
-    g_return_val_if_fail(thft != NULL, FALSE);
-
-    if (i16 != NULL)
-        *i16 = 0;
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        if (!fb_thrift_read(thft, i16, sizeof *i16))
-            return FALSE;
-
-        if (i16 != NULL)
-            *i16 = GINT16_FROM_BE(*i16);
-
-        return TRUE;
+    if (!fb_thrift_read_i64(thft, &i64)) {
+        return FALSE;
     }
 
-    if (!fb_thrift_read_i64(thft, &i64))
-        return FALSE;
-
-    if (i16 != NULL)
-        *i16 = i64;
+    if (value != NULL) {
+        *value = i64;
+    }
 
     return TRUE;
 }
 
-/**
- * Reads a 16-bit variable integer from a #fb_thrift. This function
- * only reads if the #fb_thrift is in compact mode. This only reads
- * the raw integer value without converting from the zigzag format.
- * If the return location is NULL, only the cursor is advanced.
- *
- * @param thft The #fb_thrift.
- * @param u16  The return location for the integer or NULL.
- *
- * @return TRUE if the integer was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_vi16(fb_thrift_t *thft, guint16 *u16)
+gboolean
+fb_thrift_read_vi16(FbThrift *thft, guint16 *value)
 {
     guint64 u64;
 
-    if (u16 != NULL)
-        *u16 = 0;
-
-    if (!fb_thrift_read_vi64(thft, &u64))
+    if (!fb_thrift_read_vi64(thft, &u64)) {
         return FALSE;
+    }
 
-    if (u16 != NULL)
-        *u16 = u64;
+    if (value != NULL) {
+        *value = u64;
+    }
 
     return TRUE;
 }
 
-/**
- * Reads a 32-bit integer from a #fb_thrift. If the #fb_thrift is in
- * compact mode, this will convert the integer from the zigzag format
- * after reading. If the return location is NULL, only the cursor is
- * advanced.
- *
- * @param thft The #fb_thrift.
- * @param i32  The return location for the integer or NULL.
- *
- * @return TRUE if the integer was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_i32(fb_thrift_t *thft, gint32 *i32)
+gboolean
+fb_thrift_read_i32(FbThrift *thft, gint32 *value)
 {
     gint64 i64;
 
-    g_return_val_if_fail(thft != NULL, FALSE);
-
-    if (i32 != NULL)
-        *i32 = 0;
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        if (!fb_thrift_read(thft, i32, sizeof *i32))
-            return FALSE;
-
-        if (i32 != NULL)
-            *i32 = GINT32_FROM_BE(*i32);
-
-        return TRUE;
+    if (!fb_thrift_read_i64(thft, &i64)) {
+        return FALSE;
     }
 
-    if (!fb_thrift_read_i64(thft, &i64))
-        return FALSE;
-
-    if (i32 != NULL)
-        *i32 = i64;
+    if (value != NULL) {
+        *value = i64;
+    }
 
     return TRUE;
 }
 
-/**
- * Reads a 32-bit variable integer from a #fb_thrift. This function
- * only reads if the #fb_thrift is in compact mode. This only reads
- * the raw integer value without converting from the zigzag format.
- * If the return location is NULL, only the cursor is advanced.
- *
- * @param thft The #fb_thrift.
- * @param u32  The return location for the integer or NULL.
- *
- * @return TRUE if the integer was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_vi32(fb_thrift_t *thft, guint32 *u32)
+gboolean
+fb_thrift_read_vi32(FbThrift *thft, guint32 *value)
 {
     guint64 u64;
 
-    if (u32 != NULL)
-        *u32 = 0;
-
-    if (!fb_thrift_read_vi64(thft, &u64))
+    if (!fb_thrift_read_vi64(thft, &u64)) {
         return FALSE;
+    }
 
-    if (u32 != NULL)
-        *u32 = u64;
+    if (value != NULL) {
+        *value = u64;
+    }
 
     return TRUE;
 }
 
-/**
- * Reads a 64-bit integer from a #fb_thrift. If the #fb_thrift is in
- * compact mode, this will convert the integer from the zigzag format
- * after reading. If the return location is NULL, only the cursor is
- * advanced.
- *
- * @param thft The #fb_thrift.
- * @param i64  The return location for the integer or NULL.
- *
- * @return TRUE if the integer was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_i64(fb_thrift_t *thft, gint64 *i64)
+gboolean
+fb_thrift_read_i64(FbThrift *thft, gint64 *value)
 {
     guint64 u64;
 
-    g_return_val_if_fail(thft != NULL, FALSE);
-
-    if (i64 != NULL)
-        *i64 = 0;
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        if (!fb_thrift_read(thft, i64, sizeof *i64))
-            return FALSE;
-
-        if (i64 != NULL)
-            *i64 = GINT64_FROM_BE(*i64);
-
-        return TRUE;
+    if (!fb_thrift_read_vi64(thft, &u64)) {
+        return FALSE;
     }
 
-    if (!fb_thrift_read_vi64(thft, &u64))
-        return FALSE;
-
-    if (i64 != NULL) {
+    if (value != NULL) {
         /* Convert from zigzag to integer */
-        *i64 = (u64 >> 0x01) ^ -(u64 & 0x01);
+        *value = (u64 >> 0x01) ^ -(u64 & 0x01);
     }
 
     return TRUE;
 }
 
-/**
- * Reads a 64-bit variable integer from a #fb_thrift. This function
- * only reads if the #fb_thrift is in compact mode. This only reads
- * the raw integer value without converting from the zigzag format.
- * If the return location is NULL, only the cursor is advanced.
- *
- * @param thft The #fb_thrift.
- * @param u64  The return location for the integer or NULL.
- *
- * @return TRUE if the integer was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_vi64(fb_thrift_t *thft, guint64 *u64)
+gboolean
+fb_thrift_read_vi64(FbThrift *thft, guint64 *value)
 {
+    guint i = 0;
     guint8 byte;
-    guint  i;
-
-    g_return_val_if_fail(thft != NULL, FALSE);
-
-    if (u64 != NULL) {
-        *u64 = 0;
-         i   = 0;
-    }
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT))
-        return FALSE;
+    guint64 u64 = 0;
 
     do {
         if (!fb_thrift_read_byte(thft, &byte)) {
-            if (u64 != NULL)
-                *u64 = 0;
-
             return FALSE;
         }
 
-        if (u64 != NULL) {
-            *u64 |= ((guint64) (byte & 0x7F)) << i;
-             i   += 7;
-        }
+        u64 |= ((guint64) (byte & 0x7F)) << i;
+        i += 7;
     } while ((byte & 0x80) == 0x80);
+
+    if (value != NULL) {
+        *value = u64;
+    }
 
     return TRUE;
 }
 
-/**
- * Reads a string from a #fb_thrift. If the return location is NULL,
- * only the cursor is advanced. The returned string should be freed
- * with #g_free() when no longer needed.
- *
- * @param thft The #fb_thrift.
- * @param str  The return location for the string or NULL.
- *
- * @return TRUE if the string was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_str(fb_thrift_t *thft, gchar **str)
+gboolean
+fb_thrift_read_str(FbThrift *thft, gchar **value)
 {
-    guint32   size;
-    guint8   *data;
-    gboolean  res;
+    guint8 *data;
+    guint32 size;
 
-    if (str != NULL)
-        *str = NULL;
-
-    if (thft->flags & FB_THRIFT_FLAG_COMPACT)
-        res = fb_thrift_read_vi32(thft, &size);
-    else
-        res = fb_thrift_read_i32(thft, (gint32*) &size);
-
-    if (!res)
+    if (!fb_thrift_read_vi32(thft, &size)) {
         return FALSE;
+    }
 
-    if (str != NULL) {
+    if (value != NULL) {
         data = g_new(guint8, size + 1);
         data[size] = 0;
     } else {
@@ -449,89 +322,64 @@ gboolean fb_thrift_read_str(fb_thrift_t *thft, gchar **str)
         return FALSE;
     }
 
-    if (str != NULL)
-        *str = (gchar*) data;
+    if (value != NULL) {
+        *value = (gchar*) data;
+    }
 
     return TRUE;
 }
 
-/**
- * Reads a field header from a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- * @param type The return location for the #fb_thrift_type.
- * @param id   The return location for the identifier or NULL.
- *
- * @return TRUE if the header was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_field(fb_thrift_t *thft, fb_thrift_type_t *type,
-                              gint16 *id)
+gboolean
+fb_thrift_read_field(FbThrift *thft, FbThriftType *type, gint16 *id)
 {
-    guint8 byte;
+    FbThriftPrivate *priv;
     gint16 i16;
+    guint8 byte;
 
-    g_return_val_if_fail(thft != NULL, FALSE);
+    g_return_val_if_fail(FB_IS_THRIFT(thft), FALSE);
     g_return_val_if_fail(type != NULL, FALSE);
-
-    if (id != NULL)
-        *id = 0;
+    priv = thft->priv;
 
     if (!fb_thrift_read_byte(thft, &byte)) {
-        *type = 0;
         return FALSE;
     }
 
     if (byte == FB_THRIFT_TYPE_STOP) {
-        *type = byte;
+        *type = FB_THRIFT_TYPE_STOP;
         return FALSE;
     }
 
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        *type = byte;
-
-        if (!fb_thrift_read_i16(thft, &i16))
-            return FALSE;
-
-        if (id != NULL)
-            *id = i16;
-
-        return TRUE;
-    }
-
     *type = fb_thrift_ct2t(byte & 0x0F);
-    i16   = (byte & 0xF0) >> 4;
+    i16 = (byte & 0xF0) >> 4;
 
     if (*type == FB_THRIFT_TYPE_BOOL) {
-        thft->lastbool = 0x01;
+        priv->lastbool = 0x01;
 
-        if ((byte & 0x0F) == 0x01)
-            thft->lastbool |= 0x01 << 2;
+        if ((byte & 0x0F) == 0x01) {
+            priv->lastbool |= 0x01 << 2;
+        }
 
         return TRUE;
     }
 
     if (i16 == 0) {
-        if (!fb_thrift_read_i16(thft, &i16))
+        if (!fb_thrift_read_i16(thft, &i16)) {
             return FALSE;
+        }
     } else {
-        i16 = thft->lastid + i16;
+        i16 = priv->lastid + i16;
     }
 
-    if (id != NULL)
+    if (id != NULL) {
         *id = i16;
+    }
 
-    thft->lastid = i16;
+    priv->lastid = i16;
     return TRUE;
 }
 
-/**
- * Reads a field stop from a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- *
- * @return TRUE if the stop was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_stop(fb_thrift_t *thft)
+gboolean
+fb_thrift_read_stop(FbThrift *thft)
 {
     guint8 byte;
 
@@ -539,66 +387,43 @@ gboolean fb_thrift_read_stop(fb_thrift_t *thft)
            (byte == FB_THRIFT_TYPE_STOP);
 }
 
-/**
- * Determines if the next byte is a field stop without advancing the
- * cursor.
- *
- * @param thft The #fb_thrift.
- *
- * @return TRUE if the next byte is a field stop, otherwise FALSE.
- **/
-gboolean fb_thrift_read_isstop(fb_thrift_t *thft)
+gboolean
+fb_thrift_read_isstop(FbThrift *thft)
 {
+    FbThriftPrivate *priv;
     guint8 byte;
 
-    if (!fb_thrift_read_byte(thft, &byte))
-        return FALSE;
+    g_return_val_if_fail(FB_IS_THRIFT(thft), FALSE);
+    priv = thft->priv;
 
-    thft->pos--;
+    if (!fb_thrift_read_byte(thft, &byte)) {
+        return FALSE;
+    }
+
+    priv->pos--;
     return byte == FB_THRIFT_TYPE_STOP;
 }
 
-/**
- * Reads a list header from a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- * @param type The return location for the #fb_thrift_type.
- * @param size The return location for the size.
- *
- * @return TRUE if the header was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_list(fb_thrift_t *thft, fb_thrift_type_t *type,
-                             guint *size)
+gboolean
+fb_thrift_read_list(FbThrift *thft, FbThriftType *type, guint *size)
 {
-    guint8  byte;
-    gint32  i32;
+    guint8 byte;
     guint32 u32;
 
-    g_return_val_if_fail(thft != NULL, FALSE);
     g_return_val_if_fail(type != NULL, FALSE);
     g_return_val_if_fail(size != NULL, FALSE);
 
-    *type = 0;
-    *size = 0;
-
-    if (!fb_thrift_read_byte(thft, &byte))
+    if (!fb_thrift_read_byte(thft, &byte)) {
         return FALSE;
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        if (!fb_thrift_read_i32(thft, &i32))
-            return FALSE;
-
-        *type = byte;
-        *size = i32;
-        return TRUE;
     }
 
     *type = fb_thrift_ct2t(byte & 0x0F);
     *size = (byte & 0xF0) >> 4;
 
-    if (*size == 15) {
-        if (!fb_thrift_read_vi32(thft, &u32))
+    if (*size == 0x0F) {
+        if (!fb_thrift_read_vi32(thft, &u32)) {
             return FALSE;
+        }
 
         *size = u32;
     }
@@ -606,57 +431,25 @@ gboolean fb_thrift_read_list(fb_thrift_t *thft, fb_thrift_type_t *type,
     return TRUE;
 }
 
-/**
- * Reads a map header from a #fb_thrift.
- *
- * @param thft  The #fb_thrift.
- * @param ktype The return location for the key #fb_thrift_type.
- * @param vtype The return location for the value #fb_thrift_type.
- * @param size  The return location for the size.
- *
- * @return TRUE if the header was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_map(fb_thrift_t *thft, fb_thrift_type_t *ktype,
-                            fb_thrift_type_t *vtype, guint *size)
+gboolean
+fb_thrift_read_map(FbThrift *thft, FbThriftType *ktype, FbThriftType *vtype,
+                   guint *size)
 {
-    guint8 byte;
     gint32 i32;
+    guint8 byte;
 
-    g_return_val_if_fail(thft  != NULL, FALSE);
     g_return_val_if_fail(ktype != NULL, FALSE);
     g_return_val_if_fail(vtype != NULL, FALSE);
-    g_return_val_if_fail(size  != NULL, FALSE);
+    g_return_val_if_fail(size != NULL, FALSE);
 
-    *ktype = 0;
-    *vtype = 0;
-    *size  = 0;
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        if (!fb_thrift_read_byte(thft, &byte))
-            return FALSE;
-
-        *ktype = byte;
-
-        if (!fb_thrift_read_byte(thft, &byte))
-            return FALSE;
-
-        *vtype = byte;
-
-        if (!fb_thrift_read_i32(thft, &i32))
-            return FALSE;
-
-        *size = i32;
-        return TRUE;
+    if (!fb_thrift_read_i32(thft, &i32)) {
+        return FALSE;
     }
 
-    if (!fb_thrift_read_i32(thft, &i32))
-        return FALSE;
-
-    *size = i32;
-
-    if (*size != 0) {
-        if (!fb_thrift_read_byte(thft, &byte))
+    if (i32 != 0) {
+        if (!fb_thrift_read_byte(thft, &byte)) {
             return FALSE;
+        }
 
         *ktype = fb_thrift_ct2t((byte & 0xF0) >> 4);
         *vtype = fb_thrift_ct2t(byte & 0x0F);
@@ -665,301 +458,167 @@ gboolean fb_thrift_read_map(fb_thrift_t *thft, fb_thrift_type_t *ktype,
         *vtype = 0;
     }
 
+    *size = i32;
     return TRUE;
 }
 
-/**
- * Reads a set header from a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- * @param type The return location for the #fb_thrift_type.
- * @param size The return location for the size.
- *
- * @return TRUE if the header was completely read, otherwise FALSE.
- **/
-gboolean fb_thrift_read_set(fb_thrift_t *thft, fb_thrift_type_t *type,
-                            guint *size)
+gboolean
+fb_thrift_read_set(FbThrift *thft, FbThriftType *type, guint *size)
 {
     return fb_thrift_read_list(thft, type, size);
 }
 
-/**
- * Writes raw data to a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- * @param data The data.
- * @param size The size of the data.
- **/
-void fb_thrift_write(fb_thrift_t *thft, gconstpointer data, guint size)
+void
+fb_thrift_write(FbThrift *thft, gconstpointer data, guint size)
 {
-    g_return_if_fail(thft != NULL);
+    FbThriftPrivate *priv;
 
-    g_byte_array_append(thft->bytes, data, size);
-    thft->pos += size;
+    g_return_if_fail(FB_IS_THRIFT(thft));
+    priv = thft->priv;
+
+    g_byte_array_append(priv->bytes, data, size);
+    priv->pos += size;
 }
 
-/**
- * Writes a boolean to a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- * @param bln  The boolean.
- **/
-void fb_thrift_write_bool(fb_thrift_t *thft, gboolean bln)
+void
+fb_thrift_write_bool(FbThrift *thft, gboolean value)
 {
+    FbThriftPrivate *priv;
     guint pos;
 
-    g_return_if_fail(thft != NULL);
+    g_return_if_fail(FB_IS_THRIFT(thft));
+    priv = thft->priv;
 
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        fb_thrift_write_byte(thft, bln != 0);
+    if ((priv->lastbool & 0x03) != 0x02) {
+        fb_thrift_write_byte(thft, value ? 0x01 : 0x02);
         return;
     }
 
-    if ((thft->lastbool & 0x03) != 0x02) {
-        fb_thrift_write_byte(thft, bln ? 0x01 : 0x02);
-        return;
-    }
+    pos = priv->lastbool >> 3;
+    priv->lastbool = 0;
 
-    pos = thft->lastbool >> 3;
-    thft->lastbool = 0;
-
-    if ((pos >= thft->offset) && (pos < thft->bytes->len)) {
-        thft->bytes->data[pos] &= ~0x0F;
-        thft->bytes->data[pos] |= bln ? 0x01 : 0x02;
+    if ((pos >= priv->offset) && (pos < priv->bytes->len)) {
+        priv->bytes->data[pos] &= ~0x0F;
+        priv->bytes->data[pos] |= value ? 0x01 : 0x02;
     }
 }
 
-/**
- * Writes a single byte to a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- * @param byte The byte.
- **/
-void fb_thrift_write_byte(fb_thrift_t *thft, guint8 byte)
+void
+fb_thrift_write_byte(FbThrift *thft, guint8 value)
 {
-    fb_thrift_write(thft, &byte, sizeof byte);
+    fb_thrift_write(thft, &value, sizeof value);
 }
 
-/**
- * Writes a double to a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- * @param dbl  The double.
- **/
-void fb_thrift_write_dbl(fb_thrift_t *thft, gdouble dbl)
+void
+fb_thrift_write_dbl(FbThrift *thft, gdouble value)
 {
     gint64 i64;
 
     /* Almost always 8, but check anyways */
-    static const gsize size = MIN(sizeof dbl, sizeof i64);
+    static const gsize size = MIN(sizeof value, sizeof i64);
 
-    memcpy(&i64, &dbl, size);
+    memcpy(&i64, &value, size);
     fb_thrift_write_i64(thft, i64);
 }
 
-/**
- * Writes a 16-bit integer to a #fb_thrift. If the #fb_thrift is in
- * compact mode, this will convert the integer to the zigzag format
- * before writing.
- *
- * @param thft The #fb_thrift.
- * @param i16  The integer.
- **/
-void fb_thrift_write_i16(fb_thrift_t *thft, gint16 i16)
+void
+fb_thrift_write_i16(FbThrift *thft, gint16 value)
 {
-    g_return_if_fail(thft != NULL);
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        i16 = GINT16_TO_BE(i16);
-        fb_thrift_write(thft, &i16, sizeof i16);
-        return;
-    }
-
-    fb_thrift_write_i32(thft, i16);
+    fb_thrift_write_i64(thft, value);
 }
 
-/**
- * Writes a 16-bit variable integer to a #fb_thrift. This function only
- * writes if the #fb_thrift is in compact mode. This only writes the
- * raw integer value without converting to the zigzag format.
- *
- * @param thft The #fb_thrift.
- * @param u16  The integer.
- **/
-void fb_thrift_write_vi16(fb_thrift_t *thft, guint16 u16)
+void
+fb_thrift_write_vi16(FbThrift *thft, guint16 value)
 {
-    fb_thrift_write_vi32(thft, u16);
+    fb_thrift_write_vi64(thft, value);
 }
 
-/**
- * Writes a 32-bit integer to a #fb_thrift. If the #fb_thrift is in
- * compact mode, this will convert the integer to the zigzag format
- * before writing.
- *
- * @param thft The #fb_thrift.
- * @param i32  The integer.
- **/
-void fb_thrift_write_i32(fb_thrift_t *thft, gint32 i32)
+void
+fb_thrift_write_i32(FbThrift *thft, gint32 value)
 {
-    g_return_if_fail(thft != NULL);
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        i32 = GINT32_TO_BE(i32);
-        fb_thrift_write(thft, &i32, sizeof i32);
-        return;
-    }
-
-    i32 = (i32 << 1) ^ (i32 >> 31);
-    fb_thrift_write_vi64(thft, i32);
+    value = (value << 1) ^ (value >> 31);
+    fb_thrift_write_vi64(thft, value);
 }
 
-/**
- * Writes a 32-bit variable integer to a #fb_thrift. This function only
- * writes if the #fb_thrift is in compact mode. This only writes the
- * raw integer value without converting to the zigzag format.
- *
- * @param thft The #fb_thrift.
- * @param u32  The integer.
- **/
-void fb_thrift_write_vi32(fb_thrift_t *thft, guint32 u32)
+void
+fb_thrift_write_vi32(FbThrift *thft, guint32 value)
 {
-    fb_thrift_write_vi64(thft, u32);
+    fb_thrift_write_vi64(thft, value);
 }
 
-
-/**
- * Writes a 64-bit integer to a #fb_thrift. If the #fb_thrift is in
- * compact mode, this will convert the integer to the zigzag format
- * before writing.
- *
- * @param thft The #fb_thrift.
- * @param i64  The integer.
- **/
-void fb_thrift_write_i64(fb_thrift_t *thft, gint64 i64)
+void
+fb_thrift_write_i64(FbThrift *thft, gint64 value)
 {
-    g_return_if_fail(thft != NULL);
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        i64 = GINT64_TO_BE(i64);
-        fb_thrift_write(thft, &i64, sizeof i64);
-        return;
-    }
-
-    i64 = (i64 << 1) ^ (i64 >> 63);
-    fb_thrift_write_vi64(thft, i64);
+    value = (value << 1) ^ (value >> 63);
+    fb_thrift_write_vi64(thft, value);
 }
 
-/**
- * Writes a 64-bit variable integer to a #fb_thrift. This function only
- * writes if the #fb_thrift is in compact mode. This only writes the
- * raw integer value without converting to the zigzag format.
- *
- * @param thft The #fb_thrift.
- * @param u64  The integer.
- **/
-void fb_thrift_write_vi64(fb_thrift_t *thft, guint64 u64)
+void
+fb_thrift_write_vi64(FbThrift *thft, guint64 value)
 {
     gboolean last;
-    guint8   byte;
-
-    g_return_if_fail(thft != NULL);
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT))
-        return;
+    guint8 byte;
 
     do {
-        last = (u64 & ~0x7F) == 0;
-        byte = !last ? ((u64 & 0x7F) | 0x80) : (u64 & 0x0F);
+        last = (value & ~0x7F) == 0;
+        byte = value & 0x7F;
+
+        if (!last) {
+            byte |= 0x80;
+            value >>= 7;
+        }
 
         fb_thrift_write_byte(thft, byte);
-        u64 >>= 7;
     } while (!last);
 }
 
-/**
- * Writes a string to a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- * @param str  The string.
- **/
-void fb_thrift_write_str(fb_thrift_t *thft, const gchar *str)
+void
+fb_thrift_write_str(FbThrift *thft, const gchar *value)
 {
     guint32 size;
 
-    g_return_if_fail(str != NULL);
+    g_return_if_fail(value != NULL);
 
-    size = strlen(str);
-
-    if (thft->flags & FB_THRIFT_FLAG_COMPACT)
-        fb_thrift_write_vi32(thft, size);
-    else
-        fb_thrift_write_i32(thft, size);
-
-    fb_thrift_write(thft, str, size);
+    size = strlen(value);
+    fb_thrift_write_vi32(thft, size);
+    fb_thrift_write(thft, value, size);
 }
 
-/**
- * Writes a field header to a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- * @param type The #fb_thrift_type.
- * @param id   The identifier.
- **/
-void fb_thrift_write_field(fb_thrift_t *thft, fb_thrift_type_t type,
-                           gint16 id)
+void
+fb_thrift_write_field(FbThrift *thft, FbThriftType type, gint16 id)
 {
-    gint16 iddf;
+    FbThriftPrivate *priv;
+    gint16 diff;
 
-    g_return_if_fail(thft != NULL);
+    g_return_if_fail(FB_IS_THRIFT(thft));
+    priv = thft->priv;
 
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        fb_thrift_write_byte(thft, type);
-        fb_thrift_write_i16(thft, id);
-        return;
+    if (type == FB_THRIFT_TYPE_BOOL) {
+        priv->lastbool = (priv->pos << 3) | 0x02;
     }
 
-    if (type == FB_THRIFT_TYPE_BOOL)
-        thft->lastbool = (thft->pos << 3) | 0x02;
-
     type = fb_thrift_t2ct(type);
-    iddf = id - thft->lastid;
+    diff = id - priv->lastid;
 
-    if ((id <= thft->lastid) || (iddf > 15)) {
+    if ((id <= priv->lastid) || (diff > 0x0F)) {
         fb_thrift_write_byte(thft, type);
         fb_thrift_write_i16(thft, id);
     } else {
-        fb_thrift_write_byte(thft, (iddf << 4) | type);
+        fb_thrift_write_byte(thft, (diff << 4) | type);
     }
 
-    thft->lastid = id;
+    priv->lastid = id;
 }
 
-/**
- * Writes a field stop to a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- **/
-void fb_thrift_write_stop(fb_thrift_t *thft)
+void
+fb_thrift_write_stop(FbThrift *thft)
 {
     fb_thrift_write_byte(thft, FB_THRIFT_TYPE_STOP);
 }
 
-/**
- * Writes a list header to a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- * @param type The #fb_thrift_type.
- * @param size The size.
- **/
-void fb_thrift_write_list(fb_thrift_t *thft, fb_thrift_type_t type,
-                          guint size)
+void
+fb_thrift_write_list(FbThrift *thft, FbThriftType type, guint size)
 {
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        fb_thrift_write_byte(thft, type);
-        fb_thrift_write_i32(thft, size);
-        return;
-    }
-
     type = fb_thrift_t2ct(type);
 
     if (size <= 14) {
@@ -971,26 +630,10 @@ void fb_thrift_write_list(fb_thrift_t *thft, fb_thrift_type_t type,
     fb_thrift_write_byte(thft, 0xF0 | type);
 }
 
-/**
- * Writes a map header to a #fb_thrift.
- *
- * @param thft  The #fb_thrift.
- * @param ktype The key #fb_thrift_type.
- * @param vtype The value #fb_thrift_type.
- * @param size  The size.
- **/
-void fb_thrift_write_map(fb_thrift_t *thft, fb_thrift_type_t ktype,
-                         fb_thrift_type_t vtype, guint size)
+void
+fb_thrift_write_map(FbThrift *thft, FbThriftType ktype, FbThriftType vtype,
+                    guint size)
 {
-    g_return_if_fail(thft != NULL);
-
-    if (!(thft->flags & FB_THRIFT_FLAG_COMPACT)) {
-        fb_thrift_write_byte(thft, ktype);
-        fb_thrift_write_byte(thft, vtype);
-        fb_thrift_write_i32(thft, size);
-        return;
-    }
-
     if (size == 0) {
         fb_thrift_write_byte(thft, 0);
         return;
@@ -1003,27 +646,14 @@ void fb_thrift_write_map(fb_thrift_t *thft, fb_thrift_type_t ktype,
     fb_thrift_write_byte(thft, (ktype << 4) | vtype);
 }
 
-/**
- * Writes a set header to a #fb_thrift.
- *
- * @param thft The #fb_thrift.
- * @param type The #fb_thrift_type.
- * @param size The size.
- **/
-void fb_thrift_write_set(fb_thrift_t *thft, fb_thrift_type_t type,
-                         guint size)
+void
+fb_thrift_write_set(FbThrift *thft, FbThriftType type, guint size)
 {
     fb_thrift_write_list(thft, type, size);
 }
 
-/**
- * Converts a #fb_thrift_type to a compact type.
- *
- * @param type The #fb_thrift_type.
- *
- * @return The equivalent compact type.
- **/
-guint8 fb_thrift_t2ct(fb_thrift_type_t type)
+guint8
+fb_thrift_t2ct(FbThriftType type)
 {
     static const guint8 types[] = {
         [FB_THRIFT_TYPE_STOP]   = 0,
@@ -1044,20 +674,12 @@ guint8 fb_thrift_t2ct(fb_thrift_type_t type)
         [FB_THRIFT_TYPE_LIST]   = 9
     };
 
-    if (G_UNLIKELY(type >= G_N_ELEMENTS(types)))
-        return 0;
-
+    g_return_val_if_fail(type < G_N_ELEMENTS(types), 0);
     return types[type];
 }
 
-/**
- * Converts a compact type to a #fb_thrift_type.
- *
- * @param type The compact type.
- *
- * @return The equivalent #fb_thrift_type.
- **/
-fb_thrift_type_t fb_thrift_ct2t(guint8 type)
+FbThriftType
+fb_thrift_ct2t(guint8 type)
 {
     static const guint8 types[] = {
         [0]  = FB_THRIFT_TYPE_STOP,
@@ -1075,9 +697,6 @@ fb_thrift_type_t fb_thrift_ct2t(guint8 type)
         [12] = FB_THRIFT_TYPE_STRUCT
     };
 
-    if (G_UNLIKELY(type >= G_N_ELEMENTS(types)))
-        return 0;
-
+    g_return_val_if_fail(type < G_N_ELEMENTS(types), 0);
     return types[type];
-
 }

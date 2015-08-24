@@ -11,6 +11,7 @@ config.log
 config.status
 configure
 debian
+facebook/facebook-marshal.*
 INSTALL
 libtool
 libtool.m4

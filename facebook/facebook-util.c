@@ -15,80 +15,170 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
+#include <bitlbee.h>
+#include <sha1.h>
 #include <stdarg.h>
 #include <string.h>
 #include <zlib.h>
 
 #include "facebook-util.h"
 
-/**
- * Determines the debugging state of the plugin.
- *
- * @return TRUE if debugging is enabled, otherwise FALSE.
- **/
-#ifdef DEBUG_FACEBOOK
-gboolean fb_util_debugging(void)
+GQuark
+fb_util_error_quark(void)
 {
+    static GQuark q = 0;
+
+    if (G_UNLIKELY(q == 0)) {
+        q = g_quark_from_static_string("fb-util-error-quark");
+    }
+
+    return q;
+}
+
+void
+fb_util_debug(FbDebugLevel level, const gchar *format, ...)
+{
+    va_list ap;
+
+    va_start(ap, format);
+    fb_util_vdebug(level, format, ap);
+    va_end(ap);
+}
+
+void
+fb_util_vdebug(FbDebugLevel level, const gchar *format, va_list ap)
+{
+    const gchar *lstr;
+    gchar *str;
+
     static gboolean debug = FALSE;
     static gboolean setup = FALSE;
 
+    g_return_if_fail(format != NULL);
+
     if (G_UNLIKELY(!setup)) {
-        debug = g_getenv("BITLBEE_DEBUG") ||
-                g_getenv("BITLBEE_DEBUG_FACEBOOK");
+        debug = (g_getenv("BITLBEE_DEBUG") != NULL) ||
+                (g_getenv("BITLBEE_DEBUG_FACEBOOK") != NULL);
         setup = TRUE;
     }
 
-    return debug;
+    if (!debug) {
+        return;
+    }
+
+    switch (level) {
+    case FB_UTIL_DEBUG_LEVEL_MISC:
+        lstr = "MISC";
+        break;
+    case FB_UTIL_DEBUG_LEVEL_INFO:
+        lstr = "INFO";
+        break;
+    case FB_UTIL_DEBUG_LEVEL_WARN:
+        lstr = "WARN";
+        break;
+    case FB_UTIL_DEBUG_LEVEL_ERROR:
+        lstr = "ERROR";
+        break;
+    case FB_UTIL_DEBUG_LEVEL_FATAL:
+        lstr = "FATAL";
+        break;
+
+    default:
+        g_return_if_reached();
+        return;
+    }
+
+    str = g_strdup_vprintf(format, ap);
+    g_print("[%s] %s: %s\n", lstr, "facebook", str);
+    g_free(str);
 }
-#endif /* DEBUG_FACEBOOK */
 
-/**
- * Dumps a #GByteArray to the debugging stream. This formats the output
- * similar to that of `hexdump -C`.
- *
- * @param bytes  The #GByteArray.
- * @param indent The indent width.
- * @param fmt    The format string or NULL.
- * @param ...    The format arguments.
- **/
-#ifdef DEBUG_FACEBOOK
-void fb_util_hexdump(const GByteArray *bytes, guint indent,
-                     const gchar *fmt, ...)
+void
+fb_util_debug_misc(const gchar *format, ...)
 {
-    GString *gstr;
-    va_list  ap;
-    gchar   *instr;
-    guint    i;
-    guint    j;
-    gchar    c;
+    va_list ap;
 
-    if (fmt != NULL) {
-        va_start(ap, fmt);
-        instr = g_strdup_vprintf(fmt, ap);
-        FB_UTIL_DEBUGLN("%s", instr);
-        g_free(instr);
+    va_start(ap, format);
+    fb_util_vdebug(FB_UTIL_DEBUG_LEVEL_MISC, format, ap);
+    va_end(ap);
+}
+
+void
+fb_util_debug_info(const gchar *format, ...)
+{
+    va_list ap;
+
+    va_start(ap, format);
+    fb_util_vdebug(FB_UTIL_DEBUG_LEVEL_INFO, format, ap);
+    va_end(ap);
+}
+
+void
+fb_util_debug_warn(const gchar *format, ...)
+{
+    va_list ap;
+
+    va_start(ap, format);
+    fb_util_vdebug(FB_UTIL_DEBUG_LEVEL_WARN, format, ap);
+    va_end(ap);
+}
+
+void
+fb_util_debug_error(const gchar *format, ...)
+{
+    va_list ap;
+
+    va_start(ap, format);
+    fb_util_vdebug(FB_UTIL_DEBUG_LEVEL_ERROR, format, ap);
+    va_end(ap);
+}
+
+void
+fb_util_debug_fatal(const gchar *format, ...)
+{
+    va_list ap;
+
+    va_start(ap, format);
+    fb_util_vdebug(FB_UTIL_DEBUG_LEVEL_FATAL, format, ap);
+    va_end(ap);
+}
+
+void
+fb_util_debug_hexdump(FbDebugLevel level, const GByteArray *bytes,
+                      const gchar *format, ...)
+{
+    gchar c;
+    guint i;
+    guint j;
+    GString *gstr;
+    va_list ap;
+
+    static const gchar *indent = "  ";
+
+    g_return_if_fail(bytes != NULL);
+
+    if (format != NULL) {
+        va_start(ap, format);
+        fb_util_vdebug(level, format, ap);
         va_end(ap);
     }
 
-    instr = g_strnfill(indent, ' ');
-    gstr  = g_string_sized_new(80);
-    i     = 0;
+    gstr = g_string_sized_new(80);
 
-    if (G_UNLIKELY(bytes == NULL))
-        goto finish;
-
-    for (; i < bytes->len; i += 16) {
-        g_string_append_printf(gstr, "%s%08x  ", instr, i);
+    for (i = 0; i < bytes->len; i += 16) {
+        g_string_append_printf(gstr, "%s%08x  ", indent, i);
 
         for (j = 0; j < 16; j++) {
             if ((i + j) < bytes->len) {
-                g_string_append_printf(gstr, "%02x ", bytes->data[i + j]);
+                g_string_append_printf(gstr, "%02x ",
+                                       bytes->data[i + j]);
             } else {
                 g_string_append(gstr, "   ");
             }
 
-            if (j == 7)
+            if (j == 7) {
                 g_string_append_c(gstr, ' ');
+            }
         }
 
         g_string_append(gstr, " |");
@@ -96,81 +186,138 @@ void fb_util_hexdump(const GByteArray *bytes, guint indent,
         for (j = 0; (j < 16) && ((i + j) < bytes->len); j++) {
             c = bytes->data[i + j];
 
-            if (!g_ascii_isprint(c) || g_ascii_isspace(c))
+            if (!g_ascii_isprint(c) || g_ascii_isspace(c)) {
                 c = '.';
+            }
 
             g_string_append_c(gstr, c);
         }
 
         g_string_append_c(gstr, '|');
-        FB_UTIL_DEBUGLN("%s", gstr->str);
+        fb_util_debug(level, "%s", gstr->str);
         g_string_erase(gstr, 0, -1);
     }
 
-finish:
-    g_string_append_printf(gstr, "%s%08x", instr, i);
-    FB_UTIL_DEBUGLN("%s", gstr->str);
-
+    g_string_append_printf(gstr, "%s%08x", indent, i);
+    fb_util_debug(level, "%s", gstr->str);
     g_string_free(gstr, TRUE);
-    g_free(instr);
 }
-#endif /* DEBUG_FACEBOOK */
 
-/**
- * Compare two strings case insensitively. This is useful for where
- * the return value must be a boolean, such as with a #GEqualFunc.
- *
- * @param s1 The first string.
- * @param s2 The second string.
- *
- * @return TRUE if the strings are equal, otherwise FALSE.
- **/
-gboolean fb_util_str_iequal(const gchar *s1, const gchar *s2)
+gchar *
+fb_util_locale_str(void)
 {
-    return g_ascii_strcasecmp(s1, s2) == 0;
+    const gchar * const *langs;
+    const gchar *lang;
+    gchar *chr;
+    guint i;
+
+    static const gchar chrs[] = {'.', '@'};
+
+    langs = g_get_language_names();
+    lang = langs[0];
+
+    if (g_strcmp0(lang, "C") == 0) {
+        return g_strdup("en_US");
+    }
+
+    for (i = 0; i < G_N_ELEMENTS(chrs); i++) {
+        chr = strchr(lang, chrs[i]);
+
+        if (chr != NULL) {
+            return g_strndup(lang, chr - lang);
+        }
+    }
+
+    return g_strdup(lang);
 }
 
-/**
- * Implemented #alloc_func for #g_malloc().
- *
- * @param opaque The user-defined data, which is NULL.
- * @param items  The number of items.
- * @param size   The size of each item.
- *
- * @return The pointer to the allocated memory.
- **/
-static voidpf fb_util_zalloc(voidpf opaque, uInt items, uInt size)
+gchar *
+fb_util_randstr(gsize size)
+{
+    gchar *ret;
+    GRand *rand;
+    guint i;
+    guint j;
+
+    static const gchar chars[] =
+        "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+        "abcdefghijklmnopqrstuvwxyz"
+        "0123456789";
+    static const gsize charc = G_N_ELEMENTS(chars) - 1;
+
+    if (G_UNLIKELY(size < 1)) {
+        return NULL;
+    }
+
+    rand = g_rand_new();
+    ret = g_new(gchar, size + 1);
+
+    for (i = 0; i < size; i++) {
+        j = g_rand_int_range(rand, 0, charc);
+        ret[i] = chars[j];
+    }
+
+    ret[size] = 0;
+    g_rand_free(rand);
+    return ret;
+}
+
+gboolean
+fb_util_str_is(const gchar *str, GAsciiType type)
+{
+    gsize i;
+    gsize size;
+    guchar c;
+
+    g_return_val_if_fail(str != NULL, FALSE);
+    size = strlen(str);
+
+    for (i = 0; i < size; i++) {
+        c = (guchar) str[i];
+
+        if ((g_ascii_table[c] & type) == 0) {
+            return FALSE;
+        }
+    }
+
+    return TRUE;
+}
+
+gchar *
+fb_util_uuid(void)
+{
+    guint8 buf[50];
+    sha1_state_t sha;
+
+    sha1_init(&sha);
+    random_bytes(buf, sizeof buf);
+    sha1_append(&sha, buf, sizeof buf);
+    return sha1_random_uuid(&sha);
+}
+
+static voidpf
+fb_util_zalloc(voidpf opaque, uInt items, uInt size)
 {
     return g_malloc(size * items);
 }
 
-/**
- * Implemented #free_func for #g_free().
- *
- * @param opaque  The user-defined data, which is NULL.
- * @param address The pointer address.
- **/
-static void fb_util_zfree(voidpf opaque, voidpf address)
+static void
+fb_util_zfree(voidpf opaque, voidpf address)
 {
     g_free(address);
 }
 
-/**
- * Determines if a #GByteArray is zlib compressed.
- *
- * @param bytes The #GByteArray.
- *
- * @return TRUE if the #GByteArray is compressed, otherwise FALSE.
- **/
-gboolean fb_util_zcompressed(const GByteArray *bytes)
+gboolean
+fb_util_zcompressed(const GByteArray *bytes)
 {
     guint8 b0;
     guint8 b1;
 
     g_return_val_if_fail(bytes != NULL, FALSE);
 
-    if (bytes->len < 2)
+    if (bytes->len < 2) {
         return FALSE;
+    }
 
     b0 = *(bytes->data + 0);
     b1 = *(bytes->data + 1);
@@ -179,38 +326,32 @@ gboolean fb_util_zcompressed(const GByteArray *bytes)
            ((b0 & 0x0F) == Z_DEFLATED);      /* Check the method */
 }
 
-/**
- * Compresses a #GByteArray with zlib. The returned #GByteArray should
- * be freed with #g_byte_array_free() when no longer needed.
- *
- * @param bytes The #GByteArray.
- *
- * @return The resulting #GByteArray, or NULL on error.
- **/
-GByteArray *fb_util_zcompress(const GByteArray *bytes)
+GByteArray *
+fb_util_zcompress(const GByteArray *bytes)
 {
     GByteArray *ret;
-    z_stream    zs;
-    gsize       size;
-    gint        res;
+    gint res;
+    gsize size;
+    z_stream zs;
 
     g_return_val_if_fail(bytes != NULL, NULL);
 
     memset(&zs, 0, sizeof zs);
-    zs.zalloc   = fb_util_zalloc;
-    zs.zfree    = fb_util_zfree;
-    zs.next_in  = bytes->data;
+    zs.zalloc = fb_util_zalloc;
+    zs.zfree = fb_util_zfree;
+    zs.next_in = bytes->data;
     zs.avail_in = bytes->len;
 
-    if (deflateInit(&zs, Z_BEST_COMPRESSION) != Z_OK)
+    if (deflateInit(&zs, Z_BEST_COMPRESSION) != Z_OK) {
         return NULL;
+    }
 
     size = compressBound(bytes->len);
-    ret  = g_byte_array_new();
+    ret = g_byte_array_new();
 
     g_byte_array_set_size(ret, size);
 
-    zs.next_out  = ret->data;
+    zs.next_out = ret->data;
     zs.avail_out = size;
 
     res = deflate(&zs, Z_FINISH);
@@ -228,36 +369,30 @@ GByteArray *fb_util_zcompress(const GByteArray *bytes)
     return ret;
 }
 
-/**
- * Uncompresses a zlib compressed #GByteArray. The returned #GByteArray
- * should be freed with #g_byte_array_free() when no longer needed.
- *
- * @param bytes The #GByteArray.
- *
- * @return The resulting #GByteArray, or NULL on error.
- **/
-GByteArray *fb_util_zuncompress(const GByteArray *bytes)
+GByteArray *
+fb_util_zuncompress(const GByteArray *bytes)
 {
     GByteArray *ret;
-    z_stream    zs;
-    guint8      out[1024];
-    gint        res;
+    gint res;
+    guint8 out[1024];
+    z_stream zs;
 
     g_return_val_if_fail(bytes != NULL, NULL);
 
     memset(&zs, 0, sizeof zs);
-    zs.zalloc   = fb_util_zalloc;
-    zs.zfree    = fb_util_zfree;
-    zs.next_in  = bytes->data;
+    zs.zalloc = fb_util_zalloc;
+    zs.zfree = fb_util_zfree;
+    zs.next_in = bytes->data;
     zs.avail_in = bytes->len;
 
-    if (inflateInit(&zs) != Z_OK)
+    if (inflateInit(&zs) != Z_OK) {
         return NULL;
+    }
 
     ret = g_byte_array_new();
 
     do {
-        zs.next_out  = out;
+        zs.next_out = out;
         zs.avail_out = sizeof out;
 
         res = inflate(&zs, Z_NO_FLUSH);

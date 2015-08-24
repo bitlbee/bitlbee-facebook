@@ -15,310 +15,821 @@
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-/** @file **/
+#ifndef _FACEBOOK_API_H_
+#define _FACEBOOK_API_H_
 
-#ifndef _FACEBOOK_API_H
-#define _FACEBOOK_API_H
+/**
+ * SECTION:api
+ * @section_id: facebook-api
+ * @short_description: <filename>facebook-api.h</filename>
+ * @title: Facebook API
+ *
+ * The API for interacting with the Facebook Messenger protocol.
+ */
 
-#include <bitlbee.h>
+#include <glib.h>
+#include <glib-object.h>
 
 #include "facebook-http.h"
 #include "facebook-id.h"
-#include "facebook-json.h"
 #include "facebook-mqtt.h"
 
-#define FB_API_HOST   "api.facebook.com"
-#define FB_API_BHOST  "b-api.facebook.com"
-#define FB_API_GHOST  "graph.facebook.com"
-#define FB_API_AGENT  "Facebook App / " PACKAGE " / " PACKAGE_VERSION
-#define FB_API_KEY    "256002347743983"
-#define FB_API_SECRET "374e60f8b9bb6b8cbb30f78030438895"
-
-#define FB_API_PATH_AUTH  "/method/auth.login"
-#define FB_API_PATH_FQL   "/fql"
-#define FB_API_PATH_GQL   "/graphql"
-#define FB_API_PATH_PARTS "/participants"
-#define FB_API_PATH_THRDS "/me/threads"
-#define FB_API_PATH_TOPIC "/method/messaging.setthreadname"
-
-#define FB_API_QRYID_CONTACTS  "10153122424521729"
+#define FB_TYPE_API  (fb_api_get_type())
+#define FB_API(obj)  (G_TYPE_CHECK_INSTANCE_CAST((obj), FB_TYPE_API, FbApi))
+#define FB_API_CLASS(klass)  (G_TYPE_CHECK_CLASS_CAST((klass), FB_TYPE_API, FbApiClass))
+#define FB_IS_API(obj)  (G_TYPE_CHECK_INSTANCE_TYPE((obj), FB_TYPE_API))
+#define FB_IS_API_CLASS(klass)  (G_TYPE_CHECK_CLASS_TYPE((klass), FB_TYPE_API))
+#define FB_API_GET_CLASS(obj)  (G_TYPE_INSTANCE_GET_CLASS((obj), FB_TYPE_API, FbApiClass))
 
 /**
- * Executes one of the #fb_api_funcs.
+ * FB_API_AHOST:
  *
- * @param a   The #fb_api.
- * @param f   The function to execute.
- * @param ... The function arguments.
- **/
-#define FB_API_FUNC(m, f, ...)                         \
-    G_STMT_START {                                     \
-        if (G_LIKELY((m)->funcs.f != NULL)) {          \
-            (m)->funcs.f(m, ##__VA_ARGS__, (m)->data); \
-        }                                              \
+ * The HTTP host for the Facebook API.
+ */
+#define FB_API_AHOST  "https://api.facebook.com"
+
+/**
+ * FB_API_BHOST:
+ *
+ * The HTTP host for the Facebook BAPI.
+ */
+#define FB_API_BHOST  "https://b-api.facebook.com"
+
+/**
+ * FB_API_GHOST:
+ *
+ * The HTTP host for the Facebook Graph API.
+ */
+#define FB_API_GHOST  "https://graph.facebook.com"
+
+/**
+ * FB_API_WHOST:
+ *
+ * The HTTP host for the Facebook website.
+ */
+#define FB_API_WHOST  "https://www.facebook.com"
+
+/**
+ * FB_API_KEY:
+ *
+ * The Facebook API key.
+ */
+#define FB_API_KEY  "256002347743983"
+
+/**
+ * FB_API_SECRET:
+ *
+ * The Facebook API secret.
+ */
+#define FB_API_SECRET  "374e60f8b9bb6b8cbb30f78030438895"
+
+/**
+ * FB_API_URL_ATTACH:
+ *
+ * The URL for attachment URL requests.
+ */
+#define FB_API_URL_ATTACH  FB_API_AHOST "/method/messaging.getAttachment"
+//#define FB_API_URL_ATTACH  FB_API_AHOST "/method/messaging.attachmentRedirect"
+
+/**
+ * FB_API_URL_AUTH:
+ *
+ * The URL for authentication requests.
+ */
+#define FB_API_URL_AUTH  FB_API_BHOST "/method/auth.login"
+
+/**
+ * FB_API_URL_GQL:
+ *
+ * The URL for GraphQL requests.
+ */
+#define FB_API_URL_GQL  FB_API_GHOST "/graphql"
+
+/**
+ * FB_API_URL_MESSAGES:
+ *
+ * The URL for linking message threads.
+ */
+#define FB_API_URL_MESSAGES  FB_API_WHOST "/messages"
+
+/**
+ * FB_API_URL_PARTS:
+ *
+ * The URL for participant management requests.
+ */
+#define FB_API_URL_PARTS  FB_API_GHOST "/participants"
+
+/**
+ * FB_API_URL_THREADS:
+ *
+ * The URL for thread management requests.
+ */
+#define FB_API_URL_THREADS  FB_API_GHOST "/me/threads"
+
+/**
+ * FB_API_URL_TOPIC:
+ *
+ * The URL for thread topic requests.
+ */
+#define FB_API_URL_TOPIC  FB_API_AHOST "/method/messaging.setthreadname"
+
+/**
+ * FB_API_QUERY_CONTACT:
+ *
+ * The query hash for the `FetchContactQuery`.
+ */
+#define FB_API_QUERY_CONTACT  10153746900701729
+
+/**
+ * FB_API_QUERY_CONTACTS:
+ *
+ * The query hash for the `FetchContactsFullQuery`.
+ */
+#define FB_API_QUERY_CONTACTS  10153856456271729
+
+/**
+ * FB_API_QUERY_CONTACTS_AFTER:
+ *
+ * The query hash for the `FetchContactsFullWithAfterQuery`.
+ */
+#define FB_API_QUERY_CONTACTS_AFTER  10153856456281729
+
+/**
+ * FB_API_QUERY_STICKER:
+ *
+ * The query hash for the `FetchStickersWithPreviewsQuery`.
+ */
+#define FB_API_QUERY_STICKER  10152877994321729
+
+/**
+ * FB_API_QUERY_THREAD:
+ *
+ * The query hash for the `ThreadQuery`.
+ */
+#define FB_API_QUERY_THREAD  10153919752036729
+
+/**
+ * FB_API_QUERY_THREADS:
+ *
+ * The query hash for the `ThreadListQuery`.
+ */
+#define FB_API_QUERY_THREADS  10153919752026729
+
+/**
+ * FB_API_QUERY_XMA:
+ *
+ * The query hash for the `XMAQuery`.
+ */
+#define FB_API_QUERY_XMA  10153919431161729
+
+/**
+ * FB_API_CONTACTS_COUNT:
+ *
+ * The maximum amount of contacts to fetch in a single request. If this
+ * value is set too high, HTTP request will fail. This is due to the
+ * request data being too large.
+ */
+#define FB_API_CONTACTS_COUNT  500
+
+/**
+ * FB_API_MSGID:
+ * @m: The time in milliseconds.
+ * @i: The random integer.
+ *
+ * Creates a 64-bit message identifier in the Facebook format.
+ *
+ * Returns: The message identifier.
+ */
+#define FB_API_MSGID(m, i) ((guint64) ( \
+        (((guint32) i) & 0x3FFFFF) | \
+        (((guint64) m) << 22) \
+    ))
+
+/**
+ * FB_API_ERROR_EMIT:
+ * @a: The #FbApi.
+ * @e: The #FbApiError.
+ * @c: The code to execute.
+ *
+ * Emits a #GError on behalf of the #FbApi.
+ */
+#define FB_API_ERROR_EMIT(a, e, c) \
+    G_STMT_START { \
+        if (G_UNLIKELY((e) != NULL)) { \
+            fb_api_error_emit(a, e); \
+            {c;} \
+        } \
     } G_STMT_END
 
 /**
- * Creates a message identifier.
+ * FB_API_ERROR:
  *
- * @param m The time in miliseconds (UTC).
- * @param i The random integer.
- *
- * @return The 64-bit message identifier.
- **/
-#define FB_API_MSGID(m, i) ((guint64) ( \
-        (((guint32) i) & 0x3FFFFF) |    \
-        (((guint64) m) << 22)           \
-    ))
-
-
-/** The #GError codes of #fb_api. **/
-typedef enum fb_api_error fb_api_error_t;
-
-/** The structure for interacting with the Facebook API. **/
-typedef struct fb_api fb_api_t;
-
-/** The main structure for #fb_api callback functions. **/
-typedef struct fb_api_funcs fb_api_funcs_t;
-
-/** The structure for representing an #fb_api message. **/
-typedef struct fb_api_msg fb_api_msg_t;
-
-/** The structure for representing an #fb_api presence. **/
-typedef struct fb_api_pres fb_api_pres_t;
-
-/** The structure for representing an #fb_api thread. **/
-typedef struct fb_api_thread fb_api_thread_t;
-
-/** The structure for representing an #fb_api user typing state. **/
-typedef struct fb_api_typing fb_api_typing_t;
-
-/** The structure for representing an #fb_api user. **/
-typedef struct fb_api_user fb_api_user_t;
-
-
-/**
- * The #GError codes of #fb_api.
- **/
-enum fb_api_error
-{
-    FB_API_ERROR_GENERAL /** General **/
-};
-
-/**
- * The main structure for #fb_api callback functions.
- **/
-struct fb_api_funcs
-{
-    /**
-     * The error function. This is called whenever an error occurs
-     * within the #fb_api.
-     *
-     * @param api  The #fb_api.
-     * @param err  The #GError.
-     * @param data The user-defined data or NULL.
-     **/
-    void (*error) (fb_api_t *api, GError *err, gpointer data);
-
-    /**
-     * The auth function. This is called whenever authentication has
-     * been successfully completed. This is called as a result of
-     * #fb_api_auth().
-     *
-     * @param api  The #fb_api.
-     * @param data The user-defined data or NULL.
-     **/
-    void (*auth) (fb_api_t *api, gpointer data);
-
-    /**
-     * The connect function. This is called whenever the #fb_api has
-     * been successfully connected. This connects to the MQTT service.
-     * This is called as a result of #fb_api_connect().
-     *
-     * @param api  The #fb_api.
-     * @param data The user-defined data or NULL.
-     **/
-    void (*connect) (fb_api_t *api, gpointer data);
-
-    /**
-     * The contacts function. This is called whenever the #fb_api has
-     * retrieved a set contacts. This is called as a result of
-     * #fb_api_contacts().
-     *
-     * @param api   The #fb_api.
-     * @param users The #GSList of #fb_api_user.
-     * @param data  The user-defined data or NULL.
-     **/
-    void (*contacts) (fb_api_t *api, GSList *users, gpointer data);
-
-    /**
-     * The message function. This is called whenever the #fb_api has
-     * retrieved a message.
-     *
-     * @param api  The #fb_api.
-     * @param msgs The #GSList of #fb_api_msg.
-     * @param data The user-defined data or NULL.
-     **/
-    void (*message) (fb_api_t *api, GSList *msgs, gpointer data);
-
-    /**
-     * The presence function. This is called whenever the #fb_api has
-     * retrieved a presence update.
-     *
-     * @param api   The #fb_api.
-     * @param press The #GSList of #fb_api_pres.
-     * @param data  The user-defined data or NULL.
-     **/
-    void (*presence) (fb_api_t *api, GSList *press, gpointer data);
-
-    /**
-     * The thread_create function. This is called whenever the #fb_api
-     * has created a thread. This is called as a result of
-     * #fb_api_thread_create().
-     *
-     * @param api  The #fb_api.
-     * @param tid  The thread #fb_id.
-     * @param data The user-defined data or NULL.
-     **/
-    void (*thread_create) (fb_api_t *api, fb_id_t tid, gpointer data);
-
-    /**
-     * The thread_info function. This is called whenever the #fb_api
-     * has retrieved thread information. This is called as a result of
-     * #fb_api_thread_info().
-     *
-     * @param api  The #fb_api.
-     * @param thrd The #fb_api_thread.
-     * @param data The user-defined data or NULL.
-     **/
-    void (*thread_info) (fb_api_t *api, fb_api_thread_t *thrd, gpointer data);
-
-    /**
-     * The thread_list function. This is called whenever the #fb_api
-     * has retrieved a set of threads. This is called as a result of
-     * #fb_api_thread_list().
-     *
-     * @param api   The #fb_api.
-     * @param thrds The #GSList of #fb_api_thread.
-     * @param data  The user-defined data or NULL.
-     **/
-    void (*thread_list) (fb_api_t *api, GSList *thrds, gpointer data);
-
-    /**
-     * The typing function. This is called whenever the #fb_api has
-     * retrieved a typing state update.
-     *
-     * @param api  The #fb_api.
-     * @param typg The #fb_api_typing.
-     * @param data The user-defined data or NULL.
-     **/
-    void (*typing) (fb_api_t *api, fb_api_typing_t *typg, gpointer data);
-};
-
-/**
- * The structure for interacting with the Facebook API.
- **/
-struct fb_api
-{
-    fb_api_funcs_t funcs; /** The #fb_api_funcs. **/
-    gpointer       data;  /** The user-defined data or NULL. **/
-
-    fb_http_t *http;      /** The #fb_http. **/
-    fb_mqtt_t *mqtt;      /** The #fb_mqtt. **/
-    GError    *err;       /** The #GError or NULL. **/
-
-    fb_id_t  uid;        /** The The #fb_id of the user. **/
-    gchar   *token;      /** The session token. **/
-    gchar   *stoken;     /** The sync token. **/
-    gchar   *cid;        /** The client identifier. **/
-    gchar   *mid;        /** The MQTT identifier. **/
-    gchar   *cuid;       /** The client unique identifier. **/
-};
-
-/**
- * The structure for representing an #fb_api message.
- **/
-struct fb_api_msg
-{
-    fb_id_t      uid;  /** The #fb_id of the user. **/
-    fb_id_t      tid;  /** The #fb_id of the thread. **/
-    const gchar *text; /** The message text. **/
-};
-
-/**
- * The structure for representing an #fb_api presence.
- **/
-struct fb_api_pres
-{
-    fb_id_t  uid;    /** The #fb_id of the user. **/
-    gboolean active; /** TRUE if the user is active. **/
-};
-
-/**
- * The structure for representing an #fb_api thread.
- **/
-struct fb_api_thread
-{
-    fb_id_t      tid;   /** The #fb_id of the thread. **/
-    const gchar *topic; /** The topic of the thread or NULL. **/
-    GSList      *users; /** The #GList of #fb_api_user. **/
-};
-
-/**
- * The structure for representing an #fb_api user typing state.
- **/
-struct fb_api_typing
-{
-    fb_id_t  uid;   /** The #fb_id of the user. **/
-    gboolean state; /** TRUE if the user is typing. **/
-};
-
-/**
- * The structure for representing an #fb_api user.
- **/
-struct fb_api_user
-{
-    fb_id_t      uid;  /** The #fb_id of the user. **/
-    const gchar *name; /** The name of the user. **/
-};
-
-
+ * The #GQuark of the domain of API errors.
+ */
 #define FB_API_ERROR fb_api_error_quark()
 
-GQuark fb_api_error_quark(void);
+typedef struct _FbApi FbApi;
+typedef struct _FbApiClass FbApiClass;
+typedef struct _FbApiPrivate FbApiPrivate;
+typedef struct _FbApiEvent FbApiEvent;
+typedef struct _FbApiMessage FbApiMessage;
+typedef struct _FbApiPresence FbApiPresence;
+typedef struct _FbApiThread FbApiThread;
+typedef struct _FbApiTyping FbApiTyping;
+typedef struct _FbApiUser FbApiUser;
 
-fb_api_t *fb_api_new(const fb_api_funcs_t *funcs, gpointer data);
+/**
+ * FbApiError:
+ * @FB_API_ERROR_GENERAL: General failure.
+ * @FB_API_ERROR_AUTH: Authentication failure.
+ * @FB_API_ERROR_QUEUE: Queue failure.
+ *
+ * The error codes for the #FB_API_ERROR domain.
+ */
+typedef enum
+{
+    FB_API_ERROR_GENERAL,
+    FB_API_ERROR_AUTH,
+    FB_API_ERROR_QUEUE
+} FbApiError;
 
-void fb_api_rehash(fb_api_t *api);
+/**
+ * FbApiEventType:
+ * @FB_API_EVENT_TYPE_THREAD_USER_ADDED: A thread user was added.
+ * @FB_API_EVENT_TYPE_THREAD_USER_REMOVED: A thread user was removed.
+ *
+ * The #FbApiEvent types.
+ */
+typedef enum
+{
+    FB_API_EVENT_TYPE_THREAD_USER_ADDED,
+    FB_API_EVENT_TYPE_THREAD_USER_REMOVED
+} FbApiEventType;
 
-void fb_api_free(fb_api_t *api);
+/**
+ * FbApiMessageFlags:
+ * @FB_API_MESSAGE_FLAG_DONE: The text has been processed.
+ * @FB_API_MESSAGE_FLAG_IMAGE: The text is a URL to an image.
+ * @FB_API_MESSAGE_FLAG_SELF: The text is from the #FbApi user.
+ *
+ * The #FbApiMessage flags.
+ */
+typedef enum
+{
+    FB_API_MESSAGE_FLAG_DONE = 1 << 0,
+    FB_API_MESSAGE_FLAG_IMAGE = 1 << 1,
+    FB_API_MESSAGE_FLAG_SELF = 1 << 2
+} FbApiMessageFlags;
 
-void fb_api_error(fb_api_t *api, fb_api_error_t err, const gchar *fmt, ...)
-    G_GNUC_PRINTF(3, 4);
+/**
+ * FbApi:
+ *
+ * Represents a Facebook Messenger connection.
+ */
+struct _FbApi
+{
+    /*< private >*/
+    GObject parent;
+    FbApiPrivate *priv;
+};
 
-void fb_api_auth(fb_api_t *api, const gchar *user, const gchar *pass);
+/**
+ * FbApiClass:
+ *
+ * The base class for all #FbApi's.
+ */
+struct _FbApiClass
+{
+    /*< private >*/
+    GObjectClass parent_class;
+};
 
-void fb_api_contacts(fb_api_t *api);
+/**
+ * FbApiEvent:
+ * @type: The #FbApiEventType.
+ * @uid: The user #FbId.
+ * @tid: The thread #FbId.
+ *
+ * Represents a Facebook update event.
+ */
+struct _FbApiEvent
+{
+    FbApiEventType type;
+    FbId uid;
+    FbId tid;
+};
 
-void fb_api_connect(fb_api_t *api);
+/**
+ * FbApiMessage:
+ * @flags: The #FbApiMessageFlags.
+ * @uid: The user #FbId.
+ * @tid: The thread #FbId.
+ * @text: The message text.
+ *
+ * Represents a Facebook user message.
+ */
+struct _FbApiMessage
+{
+    FbApiMessageFlags flags;
+    FbId uid;
+    FbId tid;
+    gchar *text;
+};
 
-void fb_api_disconnect(fb_api_t *api);
+/**
+ * FbApiPresence:
+ * @uid: The user #FbId.
+ * @active: #TRUE if the user is active, otherwise #FALSE.
+ *
+ * Represents a Facebook presence message.
+ */
+struct _FbApiPresence
+{
+    FbId uid;
+    gboolean active;
+};
 
-void fb_api_message(fb_api_t *api, fb_id_t id, gboolean thread,
-                    const gchar *msg);
+/**
+ * FbApiThread:
+ * @tid: The thread #FbId.
+ * @topic: The topic.
+ * @users: The #GSList of #FbApiUser's.
+ *
+ * Represents a Facebook message thread.
+ */
+struct _FbApiThread
+{
+    FbId tid;
+    gchar *topic;
+    GSList *users;
+};
 
-void fb_api_publish(fb_api_t *api, const gchar *topic, const gchar *fmt, ...)
-    G_GNUC_PRINTF(3, 4);
+/**
+ * FbApiTyping:
+ * @uid: The user #FbId.
+ * @state: #TRUE if the user is typing, otherwise #FALSE.
+ *
+ * Represents a Facebook typing message.
+ */
+struct _FbApiTyping
+{
+    FbId uid;
+    gboolean state;
+};
 
-void fb_api_thread_create(fb_api_t *api, GSList *uids);
+/**
+ * FbApiUser:
+ * @uid: The user #FbId.
+ * @name: The name of the user.
+ * @icon: The icon URL.
+ * @csum: The checksum of @icon.
+ *
+ * Represents a Facebook user.
+ */
+struct _FbApiUser
+{
+    FbId uid;
+    gchar *name;
+    gchar *icon;
+    gchar *csum;
+};
 
-void fb_api_thread_info(fb_api_t *api, fb_id_t tid);
+/**
+ * fb_api_get_type:
+ *
+ * Returns: The #GType for an #FbApi.
+ */
+GType
+fb_api_get_type(void);
 
-void fb_api_thread_invite(fb_api_t *api, fb_id_t tid, fb_id_t uid);
+/**
+ * fb_api_error_quark:
+ *
+ * Gets the #GQuark of the domain of API errors.
+ *
+ * Returns: The #GQuark of the domain.
+ */
+GQuark
+fb_api_error_quark(void);
 
-void fb_api_thread_list(fb_api_t *api, guint limit);
+/**
+ * fb_api_new:
+ *
+ * Creates a new #FbApi. The returned #FbApi should be freed with
+ * #g_object_unref() when no longer needed.
+ *
+ * Returns: The new #FbApi.
+ */
+FbApi *
+fb_api_new(void);
 
-void fb_api_thread_topic(fb_api_t *api, fb_id_t tid, const gchar *topic);
+/**
+ * fb_api_rehash:
+ * @api: The #FbApi.
+ *
+ * Rehashes and updates internal data of the #FbApi. This should be
+ * called whenever properties are modified.
+ */
+void
+fb_api_rehash(FbApi *api);
 
-void fb_api_typing(fb_api_t *api, fb_id_t uid, gboolean state);
+/**
+ * fb_api_is_invisible:
+ * @api: The #FbApi.
+ *
+ * Determines if the user of the #FbApi is invisible.
+ *
+ * Returns: #TRUE if the #FbApi user is invisible, otherwise #FALSE.
+ */
+gboolean
+fb_api_is_invisible(FbApi *api);
 
-#endif /* _FACEBOOK_API_H */
+/**
+ * fb_api_error:
+ * @api: The #FbApi.
+ * @error: The #FbApiError.
+ * @format: The format string literal.
+ * @...: The arguments for @format.
+ *
+ * Emits an #FbApiError.
+ */
+void
+fb_api_error(FbApi *api, FbApiError error, const gchar *format, ...)
+             G_GNUC_PRINTF(3, 4);
+
+/**
+ * fb_api_error_emit:
+ * @api: The #FbApi.
+ * @error: The #GError.
+ *
+ * Emits a #GError on an #FbApiError.
+ */
+void
+fb_api_error_emit(FbApi *api, GError *error);
+
+/**
+ * fb_api_auth:
+ * @api: The #FbApi.
+ * @user: The Facebook user name, email, or phone number.
+ * @pass: The Facebook password.
+ *
+ * Sends an authentication request to Facebook. This will obtain
+ * session information, which is required for all other requests.
+ */
+void
+fb_api_auth(FbApi *api, const gchar *user, const gchar *pass);
+
+/**
+ * fb_api_contact:
+ * @api: The #FbApi.
+ * @uid: The user #FbId.
+ *
+ * Sends a contact request. This will obtain the general information of
+ * a single contact.
+ */
+void
+fb_api_contact(FbApi *api, FbId uid);
+
+/**
+ * fb_api_contacts:
+ * @api: The #FbApi.
+ *
+ * Sends a contacts request. This will obtain a full list of detailed
+ * contact information about the friends of the #FbApi user.
+ */
+void
+fb_api_contacts(FbApi *api);
+
+/**
+ * fb_api_connect:
+ * @api: The #FbApi.
+ * @invisible: #TRUE to make the user invisible, otherwise #FALSE.
+ *
+ * Initializes and establishes the underlying MQTT connection.
+ */
+void
+fb_api_connect(FbApi *api, gboolean invisible);
+
+/**
+ * fb_api_disconnect:
+ * @api: The #FbApi.
+ *
+ * Closes the underlying MQTT connection.
+ */
+void
+fb_api_disconnect(FbApi *api);
+
+/**
+ * fb_api_message:
+ * @api: The #FbApi.
+ * @id: The user or thread #FbId.
+ * @thread: #TRUE if @id is a thread, otherwise #FALSE.
+ * @text: The message text.
+ *
+ * Sends a message as the user of the #FbApi to a user or a thread.
+ */
+void
+fb_api_message(FbApi *api, FbId id, gboolean thread, const gchar *text);
+
+/**
+ * fb_api_publish:
+ * @api: The #FbApi.
+ * @topic: The topic.
+ * @format: The format string literal.
+ * @...: The arguments for @format.
+ *
+ * Publishes an MQTT message.
+ */
+void
+fb_api_publish(FbApi *api, const gchar *topic, const gchar *format, ...)
+               G_GNUC_PRINTF(3, 4);
+
+/**
+ * fb_api_read:
+ * @api: The #FbApi.
+ * @id: The user or thread #FbId.
+ * @thread: #TRUE if @id is a thread, otherwise #FALSE.
+ *
+ * Marks a message thread as read.
+ */
+void
+fb_api_read(FbApi *api, FbId id, gboolean thread);
+
+/**
+ * fb_api_unread:
+ * @api: The #FbApi.
+ *
+ * Sends an unread message request.
+ */
+void
+fb_api_unread(FbApi *api);
+
+/**
+ * fb_api_thread:
+ * @api: The #FbApi.
+ * @tid: The thread #FbId.
+ *
+ * Sends a thread request. This will obtain the general information of
+ * a single thread.
+ */
+void
+fb_api_thread(FbApi *api, FbId tid);
+
+/**
+ * fb_api_thread_create:
+ * @api: The #FbApi.
+ * @uids: The #GSList of #FbId's.
+ *
+ * Sends a thread creation request. In order to create a thread, there
+ * must be at least two other users in @uids.
+ */
+void
+fb_api_thread_create(FbApi *api, GSList *uids);
+
+/**
+ * fb_api_thread_invite:
+ * @api: The #FbApi.
+ * @tid: The thread #FbId.
+ * @uid: The user #FbId.
+ *
+ * Sends a thread user invitation request.
+ */
+void
+fb_api_thread_invite(FbApi *api, FbId tid, FbId uid);
+
+/**
+ * fb_api_thread_remove:
+ * @api: The #FbApi.
+ * @tid: The thread #FbId.
+ * @uid: The user #FbId.
+ *
+ * Sends a thread user removal request.
+ */
+void
+fb_api_thread_remove(FbApi *api, FbId tid, FbId uid);
+
+/**
+ * fb_api_thread_topic:
+ * @api: The #FbApi.
+ * @tid: The thread #FbId.
+ * @topic: The topic.
+ *
+ * Sends a thread topic change request.
+ */
+void
+fb_api_thread_topic(FbApi *api, FbId tid, const gchar *topic);
+
+/**
+ * fb_api_threads:
+ * @api: The #FbApi.
+ *
+ * Sends a threads request. This will obtain a full list of detailed
+ * thread information about the threads of the #FbApi user.
+ */
+void
+fb_api_threads(FbApi *api);
+
+/**
+ * fb_api_typing:
+ * @api: The #FbApi.
+ * @uid: The user #FbId.
+ * @state: #TRUE if the #FbApi user is typing, otherwise #FALSE.
+ *
+ * Sends a typing state message for the user of the #FbApi.
+ */
+void
+fb_api_typing(FbApi *api, FbId uid, gboolean state);
+
+/**
+ * fb_api_event_dup:
+ * @event: The #FbApiEvent or #NULL.
+ *
+ * Duplicates an #FbApiEvent. If @event is #NULL, a new zero filled
+ * #FbApiEvent is returned. The returned #FbApiEvent should be freed
+ * with #fb_api_event_free() when no longer needed.
+ *
+ * Returns: The new #FbApiEvent.
+ */
+FbApiEvent *
+fb_api_event_dup(const FbApiEvent *event);
+
+/**
+ * fb_api_event_reset:
+ * @event: The #FbApiEvent.
+ *
+ * Resets an #FbApiEvent.
+ */
+void
+fb_api_event_reset(FbApiEvent *event);
+
+/**
+ * fb_api_event_free:
+ * @event: The #FbApiEvent.
+ *
+ * Frees all memory used by the #FbApiEvent.
+ */
+void
+fb_api_event_free(FbApiEvent *event);
+
+/**
+ * fb_api_message_dup:
+ * @msg: The #FbApiMessage or #NULL.
+ * @deep: #TRUE to duplicate allocated data, otherwise #FALSE.
+ *
+ * Duplicates an #FbApiMessage. If @msg is #NULL, a new zero filled
+ * #FbApiMessage is returned. The returned #FbApiMessage should be
+ * freed with #fb_api_message_free() when no longer needed.
+ *
+ * Returns: The new #FbApiMessage.
+ */
+FbApiMessage *
+fb_api_message_dup(const FbApiMessage *msg, gboolean deep);
+
+/**
+ * fb_api_message_reset:
+ * @msg: The #FbApiMessage.
+ * @deep: #TRUE to free allocated data, otherwise #FALSE.
+ *
+ * Resets an #FbApiMessage.
+ */
+void
+fb_api_message_reset(FbApiMessage *msg, gboolean deep);
+
+/**
+ * fb_api_message_free:
+ * @msg: The #FbApiMessage.
+ *
+ * Frees all memory used by the #FbApiMessage.
+ */
+void
+fb_api_message_free(FbApiMessage *msg);
+
+/**
+ * fb_api_presence_dup:
+ * @pres: The #FbApiPresence or #NULL.
+ *
+ * Duplicates an #FbApiPresence. If @pres is #NULL, a new zero filled
+ * #FbApiPresence is returned. The returned #FbApiPresence should be
+ * freed with #fb_api_presence_free() when no longer needed.
+ *
+ * Returns: The new #FbApiPresence.
+ */
+FbApiPresence *
+fb_api_presence_dup(const FbApiPresence *pres);
+
+/**
+ * fb_api_presence_reset:
+ * @pres: The #FbApiPresence.
+ *
+ * Resets an #FbApiPresence.
+ */
+void
+fb_api_presence_reset(FbApiPresence *pres);
+
+/**
+ * fb_api_presence_free:
+ * @pres: The #FbApiPresence.
+ *
+ * Frees all memory used by the #FbApiPresence.
+ */
+void
+fb_api_presence_free(FbApiPresence *pres);
+
+/**
+ * fb_api_thread_dup:
+ * @thrd: The #FbApiThread or #NULL.
+ * @deep: #TRUE to duplicate allocated data, otherwise #FALSE.
+ *
+ * Duplicates an #FbApiThread. If @thrd is #NULL, a new zero filled
+ * #FbApiThread is returned. The returned #FbApiThread should be freed
+ * with #fb_api_thread_free() when no longer needed.
+ *
+ * Returns: The new #FbApiThread.
+ */
+FbApiThread *
+fb_api_thread_dup(const FbApiThread *thrd, gboolean deep);
+
+/**
+ * fb_api_thread_reset:
+ * @thrd: The #FbApiThread.
+ * @deep: #TRUE to free allocated data, otherwise #FALSE.
+ *
+ * Resets an #FbApiThread.
+ */
+void
+fb_api_thread_reset(FbApiThread *thrd, gboolean deep);
+
+/**
+ * fb_api_thread_free:
+ * @thrd: The #FbApiThread.
+ *
+ * Frees all memory used by the #FbApiThread.
+ */
+void
+fb_api_thread_free(FbApiThread *thrd);
+
+/**
+ * fb_api_typing_dup:
+ * @typg: The #FbApiTyping or #NULL.
+ *
+ * Duplicates an #FbApiTyping. If @typg is #NULL, a new zero filled
+ * #FbApiTyping is returned. The returned #FbApiTyping should be freed
+ * with #fb_api_typing_free() when no longer needed.
+ *
+ * Returns: The new #FbApiTyping.
+ */
+FbApiTyping *
+fb_api_typing_dup(const FbApiTyping *typg);
+
+/**
+ * fb_api_typing_reset:
+ * @typg: The #FbApiTyping.
+ *
+ * Resets an #FbApiTyping.
+ */
+void
+fb_api_typing_reset(FbApiTyping *typg);
+
+/**
+ * fb_api_typing_free:
+ * @typg: The #FbApiTyping.
+ *
+ * Frees all memory used by the #FbApiTyping.
+ */
+void
+fb_api_typing_free(FbApiTyping *typg);
+
+/**
+ * fb_api_user_dup:
+ * @user: The #FbApiUser or #NULL.
+ * @deep: #TRUE to duplicate allocated data, otherwise #FALSE.
+ *
+ * Duplicates an #FbApiUser. If @user is #NULL, a new zero filled
+ * #FbApiUser is returned. The returned #FbApiUser should be freed with
+ * #fb_api_user_free() when no longer needed.
+ *
+ * Returns: The new #FbApiUser.
+ */
+FbApiUser *
+fb_api_user_dup(const FbApiUser *user, gboolean deep);
+
+/**
+ * fb_api_user_reset:
+ * @user: The #FbApiUser.
+ * @deep: #TRUE to free allocated data, otherwise #FALSE.
+ *
+ * Resets an #FbApiUser.
+ */
+void
+fb_api_user_reset(FbApiUser *user, gboolean deep);
+
+/**
+ * fb_api_user_free:
+ * @user: The #FbApiUser.
+ *
+ * Frees all memory used by the #FbApiUser.
+ */
+void
+fb_api_user_free(FbApiUser *user);
+
+#endif /* _FACEBOOK_API_H_ */
