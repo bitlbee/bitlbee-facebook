@@ -775,7 +775,11 @@ fb_api_cb_http_bool(FbHttpRequest *req, gpointer data)
 
     hata = fb_http_request_get_data(req, NULL);
 
-    if (bool2int((gchar *) hata)) {
+    if (G_UNLIKELY(hata == NULL)) {
+        hata = "false";
+    }
+
+    if (!bool2int((gchar *) hata)) {
         fb_api_error(api, FB_API_ERROR, "Failed generic API operation");
     }
 }
