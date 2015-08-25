@@ -221,6 +221,10 @@ fb_cb_api_events(FbApi *api, GSList *events, gpointer data)
         FB_ID_TO_STR(event->uid, uid);
 
         switch (event->type) {
+        case FB_API_EVENT_TYPE_THREAD_TOPIC:
+            imcb_chat_topic(gc, uid, (gchar *) event->text, 0);
+            break;
+
         case FB_API_EVENT_TYPE_THREAD_USER_ADDED:
             if (bee_user_by_handle(ic->bee, ic, uid) == NULL) {
                 g_hash_table_insert(fetch, &event->tid, event);
@@ -755,7 +759,6 @@ fb_chat_topic(struct groupchat *gc, char *topic)
     api = fb_data_get_api(fata);
     tid = FB_ID_FROM_STR(gc->title);
     fb_api_thread_topic(api, tid, topic);
-    imcb_chat_topic(gc, NULL, topic, 0);
 }
 
 static account_t *
