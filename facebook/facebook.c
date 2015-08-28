@@ -955,6 +955,10 @@ init_plugin(void)
         .handle_cmp = g_strcmp0
     };
 
+#if !GLIB_CHECK_VERSION(2, 36, 0)
+    g_type_init();
+#endif
+
     dpp = g_memdup(&pp, sizeof pp);
     register_protocol(dpp);
 
