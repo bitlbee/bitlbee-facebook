@@ -564,8 +564,8 @@ fb_init(account_t *acct)
     s = set_add(&acct->set, "uid", NULL, NULL, acct);
     s->flags = SET_NULL_OK | SET_HIDDEN;
 
-    set_add(&acct->set, "mark_read", "true", set_eval_bool, acct);
-    set_add(&acct->set, "show_unread", "true", set_eval_bool, acct);
+    set_add(&acct->set, "mark_read", "false", set_eval_bool, acct);
+    set_add(&acct->set, "show_unread", "false", set_eval_bool, acct);
     set_add(&acct->set, "sync_interval", "30", set_eval_int, acct);
 }
 
