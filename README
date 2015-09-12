@@ -1,7 +1,19 @@
 The Facebook protocol plugin for bitlbee. This plugin uses the Facebook
 Mobile API.
 
-## Building and Installing
+## Usage
+
+General usage instructions are available in the bitlbee wiki:
+
+https://wiki.bitlbee.org/HowtoFacebookMQTT
+
+## Installing from APT repo
+
+An APT repo for several recent debian/ubuntu versions is available here:
+
+https://jgeboski.github.io/
+
+## Building from source
 
 Make sure bitlbee and its headers have been installed. If bitlbee came
 from the distribution's repository, it will most likely need the
@@ -28,36 +40,9 @@ Or with a "local" bitlbee installation (location: $HOME/bitlbee):
 
     $ export BITLBEE_CFLAGS="-I$HOME/bitlbee/include/bitlbee"
     $ export BITLBEE_LIBS=""
-    $ ./autogen.sh --libdir=$HOME/bitlbee/lib
+    $ ./autogen.sh --with-plugindir=$HOME/bitlbee/lib
     $ make
     $ make install
-
-## Usage
-
-Before continuing, please note, it is recommended that you use an app
-password for your Facebook account. Not only is this more secure than
-leaving your password within bitlbee, but it allows the usage of two
-factor authentication methods. An app password can be generated via
-the security page on the Facebook website.
-
-Getting started:
-
-    > account add facebook <username> <password>
-    > account <acc> on
-
-Group Chats (existing chat):
-
-    > fbchats [acc]
-    > fbjoin [acc] <index> <channel>
-    > /topic <message>
-    > /invite <user>
-
-Group Chats (creating chat):
-
-    > fbcreate [acc] <user,user,...>
-    > fbjoin [acc] 1 <channel>
-    > /topic <message>
-    > /invite <user>
 
 ## Debugging
 
