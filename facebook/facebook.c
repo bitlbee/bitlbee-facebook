@@ -711,6 +711,21 @@ fb_chat_invite(struct groupchat *gc, char *who, char *message)
 }
 
 static void
+fb_chat_kick(struct groupchat *gc, char *who, const char *message)
+{
+    FbApi *api;
+    FbData *fata = gc->ic->proto_data;
+    FbId tid;
+    FbId uid;
+
+    api = fb_data_get_api(fata);
+    tid = FB_ID_FROM_STR(gc->title);
+    uid = FB_ID_FROM_STR(who);
+
+    fb_api_thread_remove(api, tid, uid);
+}
+
+static void
 fb_chat_leave(struct groupchat *gc)
 {
     FbData *fata = gc->ic->proto_data;
@@ -948,6 +963,7 @@ init_plugin(void)
         .add_buddy = fb_add_buddy,
         .remove_buddy = fb_remove_buddy,
         .chat_invite = fb_chat_invite,
+        .chat_kick = fb_chat_kick,
         .chat_leave = fb_chat_leave,
         .chat_msg = fb_chat_msg,
         .chat_join = fb_chat_join,
