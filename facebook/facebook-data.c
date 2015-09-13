@@ -259,19 +259,14 @@ void
 fb_data_clear_threads(FbData *fata)
 {
     FbDataPrivate *priv;
-    GList *l;
-    GList *n;
+    FbId *tid;
 
     g_return_if_fail(FB_IS_DATA(fata));
     priv = fata->priv;
 
-    l = priv->tids->head;
-
-    while (l != NULL) {
-        n = l->next;
-        g_queue_delete_link(priv->tids, l);
-        g_free(l->data);
-        l = n;
+    while (!g_queue_is_empty(priv->tids)) {
+        tid = g_queue_pop_head(priv->tids);
+        g_free(tid);
     }
 }
 
