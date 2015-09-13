@@ -707,7 +707,6 @@ fb_chat_invite(struct groupchat *gc, char *who, char *message)
     uid = FB_ID_FROM_STR(who);
 
     fb_api_thread_invite(api, tid, uid);
-    imcb_chat_add_buddy(gc, who);
 }
 
 static void
