@@ -25,6 +25,45 @@
 static void
 fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data);
 
+static gboolean
+fb_channel_join(struct im_connection *ic, FbId tid, const gchar **channel)
+{
+    const gchar *room;
+    const gchar *tag;
+    FbId rid;
+    GSList *l;
+    irc_t *irc = ic->acc->bee->ui_data;
+    irc_channel_t *ich;
+
+    for (l = irc->channels; l != NULL; l = l->next) {
+        ich = l->data;
+        tag = set_getstr(&ich->set, "account");
+
+        if (g_strcmp0(tag, ic->acc->tag) != 0) {
+            continue;
+        }
+
+        room = set_getstr(&ich->set, "room");
+        rid = FB_ID_FROM_STR(room);
+
+        if (rid != tid) {
+            continue;
+        }
+
+        if (!(ich->flags & IRC_CHANNEL_JOINED) && (ich->f != NULL)) {
+            ich->f->join(ich);
+        }
+
+        if (channel != NULL) {
+            *channel = ich->name;
+        }
+
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
 static void
 fb_cb_api_auth(FbApi *api, gpointer data)
 {
@@ -256,6 +295,7 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
     FbApiMessage *msg;
     FbData *fata = data;
     gboolean mark;
+    gboolean open;
     gchar tid[FB_ID_STRMAX];
     gchar uid[FB_ID_STRMAX];
     GSList *l;
@@ -265,6 +305,7 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
     ic = fb_data_get_connection(fata);
     acct = ic->acc;
     mark = set_getbool(&acct->set, "mark_read");
+    open = set_getbool(&acct->set, "group_chat_open");
 
     for (l = msgs; l != NULL; l = l->next) {
         msg = l->data;
@@ -292,6 +333,11 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
 
         FB_ID_TO_STR(msg->tid, tid);
         gc = bee_chat_by_title(ic->bee, ic, tid);
+
+        if ((gc == NULL) && open) {
+            fb_channel_join(ic, msg->tid, NULL);
+            gc = bee_chat_by_title(ic->bee, ic, tid);
+        }
 
         if (gc != NULL) {
             if (mark) {
@@ -493,7 +539,7 @@ fb_cb_api_typing(FbApi *api, FbApiTyping *typg, gpointer data)
 }
 
 static struct groupchat *
-fb_data_groupchat_new(struct im_connection *ic, FbId tid, const gchar *name)
+fb_groupchat_new(struct im_connection *ic, FbId tid, const gchar *name)
 {
     FbApi *api;
     FbData *fata = ic->proto_data;
@@ -504,6 +550,7 @@ fb_data_groupchat_new(struct im_connection *ic, FbId tid, const gchar *name)
     FB_ID_TO_STR(tid, stid);
 
     if (bee_chat_by_title(ic->bee, ic, stid) != NULL) {
+        imcb_error(ic, "Failed to create chat: %" FB_ID_FORMAT, tid);
         return NULL;
     }
 
@@ -564,6 +611,7 @@ fb_init(account_t *acct)
     s = set_add(&acct->set, "uid", NULL, NULL, acct);
     s->flags = SET_NULL_OK | SET_HIDDEN;
 
+    set_add(&acct->set, "group_chat_open", "false", set_eval_bool, acct);
     set_add(&acct->set, "mark_read", "false", set_eval_bool, acct);
     set_add(&acct->set, "show_unread", "false", set_eval_bool, acct);
     set_add(&acct->set, "sync_interval", "30", set_eval_int, acct);
@@ -750,17 +798,9 @@ fb_chat_join(struct im_connection *ic, const char *room, const char *nick,
              const char *password, set_t **sets)
 {
     FbId tid;
-    struct groupchat *gc;
 
     tid = FB_ID_FROM_STR(room);
-    gc = fb_data_groupchat_new(ic, tid, NULL);
-
-    if (gc == NULL) {
-        imcb_error(ic, "Failed to join chat: %" FB_ID_FORMAT, tid);
-        return NULL;
-    }
-
-    return gc;
+    return fb_groupchat_new(ic, tid, NULL);
 }
 
 static void
@@ -878,7 +918,6 @@ fb_cmd_fbcreate(irc_t *irc, char **args)
     GSList *uids = NULL;
     guint oset;
     guint i;
-    struct im_connection *ic;
 
     acct = fb_cmd_account(irc, args, 2, &oset);
 
@@ -887,7 +926,6 @@ fb_cmd_fbcreate(irc_t *irc, char **args)
     }
 
     fata = acct->ic->proto_data;
-    ic = fb_data_get_connection(fata);
 
     for (i = oset; args[i] != NULL; i++) {
         iu = irc_user_by_name(irc, args[i]);
@@ -900,7 +938,7 @@ fb_cmd_fbcreate(irc_t *irc, char **args)
     }
 
     if (uids == NULL) {
-        imcb_error(ic, "No valid users specified");
+        irc_rootmsg(irc, "No valid users specified");
         return;
     }
 
@@ -912,12 +950,15 @@ fb_cmd_fbcreate(irc_t *irc, char **args)
 static void
 fb_cmd_fbjoin(irc_t *irc, char **args)
 {
+    const gchar *chan;
     account_t *acct;
     FbData *fata;
     FbId tid;
     gchar *name;
     guint i;
     guint oset;
+    irc_channel_t *ich;
+    struct groupchat *gc;
     struct im_connection *ic;
 
     acct = fb_cmd_account(irc, args, 2, &oset);
@@ -934,14 +975,17 @@ fb_cmd_fbjoin(irc_t *irc, char **args)
     tid = fb_data_get_thread(fata, i - 1);
 
     if ((i < 1) || (tid == 0)) {
-        imcb_error(ic, "Invalid index: %u", i);
+        irc_rootmsg(irc, "Invalid index: %u", i);
         return;
     }
 
-    if (fb_data_groupchat_new(ic, tid, name) == NULL) {
-        imcb_error(ic, "Failed to join chat: %s (%" FB_ID_FORMAT ")",
-                   name, tid);
+    if (!fb_channel_join(ic, tid, &chan)) {
+        gc = fb_groupchat_new(ic, tid, name);
+        ich = gc->ui_data;
+        chan = ich->name;
     }
+
+    irc_rootmsg(irc, "Joining channel %s", chan);
 }
 
 G_MODULE_EXPORT void
