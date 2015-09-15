@@ -715,6 +715,22 @@ fb_buddy_msg(struct im_connection *ic, char *to, char *message, int flags)
     return 0;
 }
 
+static void
+fb_set_away(struct im_connection *ic, char *state, char *message)
+{
+    FbApi *api;
+    FbData *fata = ic->proto_data;
+    FbId uid;
+    gboolean invisible;
+
+    api = fb_data_get_api(fata);
+    invisible = ((state != NULL) && (*state != '\0'));
+
+    if (fb_api_is_invisible(api) != invisible) {
+        fb_api_connect(api, invisible);
+    }
+}
+
 static int
 fb_send_typing(struct im_connection *ic, char *who, int flags)
 {
@@ -813,6 +829,18 @@ fb_chat_topic(struct groupchat *gc, char *topic)
     api = fb_data_get_api(fata);
     tid = FB_ID_FROM_STR(gc->title);
     fb_api_thread_topic(api, tid, topic);
+}
+
+static GList *
+fb_away_states(struct im_connection *ic)
+{
+    static GList *m = NULL;
+
+    if (G_UNLIKELY(m == NULL)) {
+        m = g_list_append(m, "Away");
+    }
+
+    return m;
 }
 
 static account_t *
@@ -1002,6 +1030,7 @@ init_plugin(void)
         .login = fb_login,
         .logout = fb_logout,
         .buddy_msg = fb_buddy_msg,
+        .set_away = fb_set_away,
         .send_typing = fb_send_typing,
         .add_buddy = fb_add_buddy,
         .remove_buddy = fb_remove_buddy,
@@ -1011,6 +1040,7 @@ init_plugin(void)
         .chat_msg = fb_chat_msg,
         .chat_join = fb_chat_join,
         .chat_topic = fb_chat_topic,
+        .away_states = fb_away_states,
         .handle_cmp = g_strcmp0
     };
 
