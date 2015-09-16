@@ -22,6 +22,10 @@
 #include "facebook-mqtt.h"
 #include "facebook-util.h"
 
+#ifndef OPT_SELFMESSAGE
+#define OPT_SELFMESSAGE 0
+#endif
+
 static void
 fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data);
 
@@ -296,9 +300,11 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
     FbData *fata = data;
     gboolean mark;
     gboolean open;
+    gboolean selfmess;
     gchar tid[FB_ID_STRMAX];
     gchar uid[FB_ID_STRMAX];
     GSList *l;
+    guint32 flags;
     struct groupchat *gc;
     struct im_connection *ic;
 
@@ -306,13 +312,20 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
     acct = ic->acc;
     mark = set_getbool(&acct->set, "mark_read");
     open = set_getbool(&acct->set, "group_chat_open");
+    selfmess = (set_find(&ic->bee->set, "self_messages") != NULL);
 
     for (l = msgs; l != NULL; l = l->next) {
         msg = l->data;
         FB_ID_TO_STR(msg->uid, uid);
 
+        flags = 0;
+
         if (msg->flags & FB_API_MESSAGE_FLAG_SELF) {
-            continue;
+            if (!selfmess) {
+                continue;
+            }
+
+            flags = OPT_SELFMESSAGE;
         }
 
         if (bee_user_by_handle(ic->bee, ic, uid) == NULL) {
@@ -327,7 +340,7 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
                 fb_api_read(api, msg->uid, FALSE);
             }
 
-            imcb_buddy_msg(ic, uid, (gchar*) msg->text, 0, 0);
+            imcb_buddy_msg(ic, uid, (gchar*) msg->text, flags, 0);
             continue;
         }
 
@@ -344,7 +357,7 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
                 fb_api_read(api, msg->tid, TRUE);
             }
 
-            imcb_chat_msg(gc, uid, (gchar*) msg->text, 0, 0);
+            imcb_chat_msg(gc, uid, (gchar*) msg->text, flags, 0);
         }
     }
 }
