@@ -48,6 +48,11 @@ fb_channel_join(struct im_connection *ic, FbId tid, const gchar **channel)
         }
 
         room = set_getstr(&ich->set, "room");
+
+        if (room == NULL) {
+            continue;
+        }
+
         rid = FB_ID_FROM_STR(room);
 
         if (rid != tid) {
