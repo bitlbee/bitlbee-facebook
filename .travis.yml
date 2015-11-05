@@ -12,21 +12,14 @@ compiler:
 env:
   global:
     - secure: "RyCpkq3KU8zftQfD54rNERzzygzLfJtQQXG13LnsIj3NSx5Attr6aM1lZKLWEEgjpkiEuhXkmcwmOuQJfEqYHxYQ24SSKihE9AvEBrOGNuY8CB4SFZEs+atRgovi2SrttdVOU3AzlZSgUUAaHNBUaC7QgimODAyCPV9KfuQkJEw="
+    - COVERITY_SCAN_PROJECT_NAME=jgeboski/bitlbee-facebook
+    - COVERITY_SCAN_NOTIFICATION_EMAIL=nope
+    - COVERITY_SCAN_BUILD_COMMAND=make
+    - COVERITY_SCAN_BRANCH_PATTERN=coverity_scan
 
   matrix:
     - ANALYZER=""
     - ANALYZER="scan-build -k --status-bugs"
-
-addons:
-  coverity_scan:
-    project:
-      name: jgeboski/bitlbee-facebook
-      version: git
-      description: bitlbee-facebook
-
-    build_command_prepend: ./autogen.sh
-    build_command: make
-    branch_pattern: coverity_scan
 
 before_install:
   - sudo apt-get update -qq
@@ -61,11 +54,9 @@ install:
   - cd -
 
 script:
+  - CFLAGS="-Werror" ./autogen.sh --enable-warnings
   - |
-    if [ "${COVERITY_SCAN_BRANCH}" != "1" ]; then
-      CFLAGS="-Werror" ./autogen.sh --enable-warnings
+    if [[ "${TRAVIS_JOB_NUMBER##*.}" == "1" ]]; then
+        curl -s "https://scan.coverity.com/scripts/travisci_build_coverity_scan.sh" | bash || true
     fi
-  - |
-    if [ "${COVERITY_SCAN_BRANCH}" != "1" ]; then
-      ${ANALYZER} make
-    fi
+  - ${ANALYZER} make
