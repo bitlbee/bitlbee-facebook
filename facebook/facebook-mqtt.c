@@ -304,12 +304,13 @@ fb_mqtt_cb_ping(gpointer data, gint fd, b_input_condition cond)
     FbMqttMessage *msg;
     FbMqttPrivate *priv = mqtt->priv;
 
+    priv->tev = 0;
+    fb_mqtt_timeout(mqtt);
+
     msg = fb_mqtt_message_new(FB_MQTT_MESSAGE_TYPE_PINGREQ, 0);
     fb_mqtt_write(mqtt, msg);
     g_object_unref(msg);
 
-    priv->tev = 0;
-    fb_mqtt_timeout(mqtt);
     return FALSE;
 }
 
