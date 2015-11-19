@@ -549,9 +549,8 @@ fb_mqtt_write(FbMqtt *mqtt, FbMqttMessage *msg)
 
     fd = ssl_getfd(priv->ssl);
     g_byte_array_append(priv->wbuf, bytes->data, bytes->len);
-    fb_mqtt_cb_write(mqtt, fd, B_EV_IO_WRITE);
 
-    if (priv->wev > 0) {
+    if (fb_mqtt_cb_write(mqtt, fd, B_EV_IO_WRITE) && (priv->wev < 1)) {
         priv->wev = b_input_add(fd, B_EV_IO_WRITE, fb_mqtt_cb_write, mqtt);
     }
 }
