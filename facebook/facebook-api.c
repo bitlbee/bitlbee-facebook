@@ -26,6 +26,19 @@
 #include "facebook-thrift.h"
 #include "facebook-util.h"
 
+#if !GLIB_CHECK_VERSION(2, 32, 0)
+static inline GByteArray * g_byte_array_new_take(guint8 *data, gsize len)
+{
+	GByteArray *array;
+
+	array = g_byte_array_new();
+	g_byte_array_append(array, data, len);
+	g_free(data);
+
+	return array;
+}
+#endif
+
 typedef struct _FbApiData FbApiData;
 
 enum
