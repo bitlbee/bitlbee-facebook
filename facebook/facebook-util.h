@@ -224,7 +224,7 @@ fb_util_zcompressed(const GByteArray *bytes);
 /**
  * fb_util_zcompress:
  * @bytes: The #GByteArray.
- * @error: The return location for the #GError, or #NULL.
+ * @error: The return location for the #GError or #NULL.
  *
  * Compresses a #GByteArray with zlib. The returned #GByteArray should
  * be freed with #g_byte_array_free() when no longer needed.
@@ -237,12 +237,12 @@ fb_util_zcompress(const GByteArray *bytes, GError **error);
 /**
  * fb_util_zuncompress:
  * @bytes: The #GByteArray.
- * @error: The return location for the #GError, or #NULL.
+ * @error: The return location for the #GError or #NULL.
  *
  * Uncompresses a #GByteArray with zlib. The returned #GByteArray
  * should be freed with #g_byte_array_free() when no longer needed.
  *
- * Returns: The uncompressed #GByteArray, or #NULL on error.
+ * Returns: The uncompressed #GByteArray or #NULL on error.
  */
 GByteArray *
 fb_util_zuncompress(const GByteArray *bytes, GError **error);

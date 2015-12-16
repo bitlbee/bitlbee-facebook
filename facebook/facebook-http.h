@@ -417,7 +417,7 @@ fb_http_values_get_keys(FbHttpValues *values);
  * fb_http_values_get_bool:
  * @values: The #FbHttpValues.
  * @name: The value name.
- * @error: The return location for the #GError, or #NULL.
+ * @error: The return location for the #GError or #NULL.
  *
  * Gets a boolean value from the #FbHttpValues. This optionally assigns
  * an appropriate #GError upon failure.
@@ -432,7 +432,7 @@ fb_http_values_get_bool(FbHttpValues *values, const gchar *name,
  * fb_http_values_get_dbl:
  * @values: The #FbHttpValues.
  * @name: The value name.
- * @error: The return location for the #GError, or #NULL.
+ * @error: The return location for the #GError or #NULL.
  *
  * Gets a floating point value from the #FbHttpValues. This optionally
  * assigns an appropriate #GError upon failure.
@@ -447,7 +447,7 @@ fb_http_values_get_dbl(FbHttpValues *values, const gchar *name,
  * fb_http_values_get_int:
  * @values: The #FbHttpValues.
  * @name: The value name.
- * @error: The return location for the #GError, or #NULL.
+ * @error: The return location for the #GError or #NULL.
  *
  * Gets an integer value from the #FbHttpValues. This optionally
  * assigns an appropriate #GError upon failure.
@@ -462,7 +462,7 @@ fb_http_values_get_int(FbHttpValues *values, const gchar *name,
  * fb_http_values_get_str:
  * @values: The #FbHttpValues.
  * @name: The value name.
- * @error: The return location for the #GError, or #NULL.
+ * @error: The return location for the #GError or #NULL.
  *
  * Gets a string value from the #FbHttpValues. This optionally assigns
  * an appropriate #GError upon failure.
@@ -477,7 +477,7 @@ fb_http_values_get_str(FbHttpValues *values, const gchar *name,
  * fb_http_values_dup_str:
  * @values: The #FbHttpValues.
  * @name: The value name.
- * @error: The return location for the #GError, or #NULL.
+ * @error: The return location for the #GError or #NULL.
  *
  * Gets a duplicated string value from the #FbHttpValues. This
  * optionally assigns an appropriate #GError upon failure. The returned

@@ -515,7 +515,7 @@ fb_mqtt_message_read_r(FbMqttMessage *msg, GByteArray *bytes);
 /**
  * fb_mqtt_message_read_byte:
  * @msg: The #FbMqttMessage.
- * @value: The return location for the value, or #NULL.
+ * @value: The return location for the value or #NULL.
  *
  * Reads an 8-bit integer value from the #FbMqttMessage. If @value is
  * #NULL, this will simply advance the cursor position.
@@ -528,7 +528,7 @@ fb_mqtt_message_read_byte(FbMqttMessage *msg, guint8 *value);
 /**
  * fb_mqtt_message_read_mid:
  * @msg: The #FbMqttMessage.
- * @value: The return location for the value, or #NULL.
+ * @value: The return location for the value or #NULL.
  *
  * Reads a message identifier from the #FbMqttMessage. If @value is
  * #NULL, this will simply advance the cursor position.
@@ -541,7 +541,7 @@ fb_mqtt_message_read_mid(FbMqttMessage *msg, guint16 *value);
 /**
  * fb_mqtt_message_read_u16:
  * @msg: The #FbMqttMessage.
- * @value: The return location for the value, or #NULL.
+ * @value: The return location for the value or #NULL.
  *
  * Reads a 16-bit integer value from the #FbMqttMessage. If @value is
  * #NULL, this will simply advance the cursor position.
@@ -554,7 +554,7 @@ fb_mqtt_message_read_u16(FbMqttMessage *msg, guint16 *value);
 /**
  * fb_mqtt_message_read_str:
  * @msg: The #FbMqttMessage.
- * @value: The return location for the value, or #NULL.
+ * @value: The return location for the value or #NULL.
  *
  * Reads a string value from the #FbMqttMessage. The value returned to
  * @value should be freed with #g_free() when no longer needed. If
