@@ -4,14 +4,12 @@ lib_LTLIBRARIES = facebook.la
 facebook_la_CFLAGS  = \
 	$(BITLBEE_CFLAGS) \
 	$(JSON_CFLAGS) \
-	$(GLIB_CFLAGS) \
-	$(ZLIB_CFLAGS)
+	$(GLIB_CFLAGS)
 
 facebook_la_LDFLAGS = \
 	$(BITLBEE_LIBS) \
 	$(JSON_LIBS) \
-	$(GLIB_LIBS) \
-	$(ZLIB_LIBS)
+	$(GLIB_LIBS)
 
 facebook_la_SOURCES = \
 	facebook-marshal.c \
