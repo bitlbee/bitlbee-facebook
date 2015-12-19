@@ -11,17 +11,19 @@ compiler:
 
 env:
   global:
+    - secure: "TEmTAAN05PO2xTeF/UvmirkFJIUuzYemI6azQRlzhEu/71qMppKcLgnTd6xbQIpOJr96FsDvagC/56XaL0682YjbCATFQft3aD+XtIV8DsGE0edpR8rPTaztwQ7ZYooigRuhe02nWu3g1f8N/3QL9aMUlUCVbvdSPL9c2yB9sFM="
+    - secure: "hBqs4rtUTPCOMcrovwqFbWiG7j17T/3jAwtm/5N3c8F7nkiMI/oba6AI7OATYekp+H6oPXD2VpVuFUVklxN9LVzgMybnKx7DNcUyOCCMmBThfRZg+21ActpgYaboynRsyZXCGzqAgGfJRhT8rteLfUNe0uepBe6TBoTEpDO4Gks="
     - secure: "RyCpkq3KU8zftQfD54rNERzzygzLfJtQQXG13LnsIj3NSx5Attr6aM1lZKLWEEgjpkiEuhXkmcwmOuQJfEqYHxYQ24SSKihE9AvEBrOGNuY8CB4SFZEs+atRgovi2SrttdVOU3AzlZSgUUAaHNBUaC7QgimODAyCPV9KfuQkJEw="
     - COVERITY_SCAN_PROJECT_NAME=jgeboski/bitlbee-facebook
     - COVERITY_SCAN_NOTIFICATION_EMAIL=nope
     - COVERITY_SCAN_BUILD_COMMAND=make
     - COVERITY_SCAN_BRANCH_PATTERN=coverity_scan
 
-  matrix:
-    - ANALYZER=""
-    - ANALYZER="scan-build -k --status-bugs"
-
 before_install:
+  - echo "deb http://download.opensuse.org/repositories/openSUSE:/Tools/xUbuntu_14.04 ./"
+      | sudo tee /etc/apt/sources.list.d/suse.list
+  - wget -O- "http://download.opensuse.org/repositories/openSUSE:/Tools/xUbuntu_14.04/Release.key"
+      | sudo apt-key add -
   - sudo apt-get update -qq
   - sudo apt-get install -qq
       --no-install-recommends
@@ -29,6 +31,7 @@ before_install:
       clang
       libjson-glib-dev
       lynx
+      osc
       xsltproc
       xmlto
 
@@ -52,11 +55,8 @@ install:
   - make
   - sudo make install install-dev
   - cd -
+  - rm -rf bitlbee
 
 script:
-  - CFLAGS="-Werror" ./autogen.sh --enable-warnings
-  - |
-    if [[ "${TRAVIS_JOB_NUMBER##*.}" == "1" ]]; then
-        curl -s "https://scan.coverity.com/scripts/travisci_build_coverity_scan.sh" | bash || true
-    fi
-  - ${ANALYZER} make
+  - curl -s "https://scan.coverity.com/scripts/travisci_build_coverity_scan.sh" | bash || true
+  - ./travis.sh
