@@ -1,14 +1,9 @@
 #!/bin/bash
+
+[ "${TRAVIS_PULL_REQUEST}" == "false" -a \
+  "${TRAVIS_BRANCH}" == "${MY_DEPLOY_BRANCH}" \
+] || exit
 set -e
-
-CFLAGS="-Werror" ./autogen.sh --enable-warnings
-make
-make clean
-scan-build -k --status-bugs make
-
-if [ "${TRAVIS_BRANCH}" != "master" ]; then
-    exit
-fi
 
 FULLVERS="$(date +%Y%m%d)~$(git rev-parse --short=7 HEAD)~${TRAVIS_BUILD_NUMBER}"
 FULLDATE=$(date -R)

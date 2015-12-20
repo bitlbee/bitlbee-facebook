@@ -18,6 +18,7 @@ env:
     - COVERITY_SCAN_NOTIFICATION_EMAIL=nope
     - COVERITY_SCAN_BUILD_COMMAND=make
     - COVERITY_SCAN_BRANCH_PATTERN=coverity_scan
+    - MY_DEPLOY_BRANCH=master
 
 before_install:
   - echo "deb http://download.opensuse.org/repositories/openSUSE:/Tools/xUbuntu_$(lsb_release -rs) ./"
@@ -27,35 +28,19 @@ before_install:
   - sudo apt-get update -qq
   - sudo apt-get install -qq
       --no-install-recommends
-      asciidoc
       clang
       libjson-glib-dev
-      lynx
       osc
-      xsltproc
-      xmlto
 
 install:
-  - git clone https://github.com/bitlbee/bitlbee
-  - cd bitlbee
-  - ./configure
-      --events=glib
-      --ssl=gnutls
-      --debug=1
-      --plugins=1
-      --jabber=0
-      --msn=0
-      --oscar=0
-      --otr=0
-      --purple=0
-      --skype=0
-      --twitter=0
-      --yahoo=0
-  - make
-  - sudo make install install-dev
-  - cd -
-  - rm -rf bitlbee
+  - .travis/bitlbee.sh
 
 script:
   - curl -s "https://scan.coverity.com/scripts/travisci_build_coverity_scan.sh" | bash || true
-  - ./travis.sh
+  - CFLAGS="-Werror" ./autogen.sh --enable-warnings
+  - make
+  - make clean
+  - scan-build -k --status-bugs make
+
+after_success:
+  - .travis/obs.sh
