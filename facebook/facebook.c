@@ -26,6 +26,10 @@
 #define OPT_SELFMESSAGE 0
 #endif
 
+#if !GLIB_CHECK_VERSION(2, 30, 0)
+#define G_VALUE_INIT {0, {{0}}}
+#endif
+
 static void
 fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data);
 

@@ -20,6 +20,18 @@
 #include "facebook-api.h"
 #include "facebook-data.h"
 
+#if !GLIB_CHECK_VERSION(2, 30, 0)
+#define G_VALUE_INIT {0, {{0}}}
+#endif
+
+#if !GLIB_CHECK_VERSION(2, 32, 0)
+static inline void g_queue_free_full(GQueue *queue, GDestroyNotify free_func)
+{
+	g_queue_foreach(queue, (GFunc)free_func, NULL);
+	g_queue_free(queue);
+}
+#endif
+
 struct _FbDataPrivate
 {
     FbApi *api;
