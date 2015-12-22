@@ -1911,7 +1911,7 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
         writeid = fb_json_values_next_str_dup(values, NULL);
         str = fb_json_values_next_str(values, NULL);
 
-        if (g_strcmp0(str, "ARE_FRIENDS") == 0) {
+        if (g_strcmp0(str, "ARE_FRIENDS") != 0) {
             continue;
         }
 
