@@ -37,6 +37,16 @@
  */
 #define FB_UTIL_ERROR fb_util_error_quark()
 
+/**
+ * FbDebugLevel:
+ * @FB_UTIL_DEBUG_LEVEL_MISC: Miscellaneous message.
+ * @FB_UTIL_DEBUG_LEVEL_INFO: Information message.
+ * @FB_UTIL_DEBUG_LEVEL_WARN: Warning message.
+ * @FB_UTIL_DEBUG_LEVEL_ERROR: Error message.
+ * @FB_UTIL_DEBUG_LEVEL_FATAL: Fatal message.
+ *
+ * The types of log messages.
+ */
 typedef enum
 {
     FB_UTIL_DEBUG_LEVEL_MISC,
