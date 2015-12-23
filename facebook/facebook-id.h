@@ -27,9 +27,7 @@
  * The Facebook identifier utilities.
  */
 
-#include <glib.h>
-#include <glib/gprintf.h>
-
+#include "facebook-glib.h"
 #include "facebook-util.h"
 
 /**

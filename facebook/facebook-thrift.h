@@ -27,8 +27,7 @@
  * The Thrift reader/writer.
  */
 
-#include <glib.h>
-#include <glib-object.h>
+#include "facebook-glib.h"
 
 #define FB_TYPE_THRIFT  (fb_thrift_get_type())
 #define FB_THRIFT(obj)  (G_TYPE_CHECK_INSTANCE_CAST((obj), FB_TYPE_THRIFT, FbThrift))

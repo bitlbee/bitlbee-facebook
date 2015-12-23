@@ -28,10 +28,9 @@
  */
 
 #include <bitlbee.h>
-#include <glib.h>
-#include <glib-object.h>
 
 #include "facebook-api.h"
+#include "facebook-glib.h"
 #include "facebook-http.h"
 #include "facebook-id.h"
 

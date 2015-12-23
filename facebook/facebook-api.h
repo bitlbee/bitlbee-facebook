@@ -27,9 +27,7 @@
  * The API for interacting with the Facebook Messenger protocol.
  */
 
-#include <glib.h>
-#include <glib-object.h>
-
+#include "facebook-glib.h"
 #include "facebook-http.h"
 #include "facebook-id.h"
 #include "facebook-mqtt.h"

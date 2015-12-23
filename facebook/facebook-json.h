@@ -27,9 +27,9 @@
  * The JSON utilities.
  */
 
-#include <glib.h>
-#include <glib-object.h>
 #include <json-glib/json-glib.h>
+
+#include "facebook-glib.h"
 
 #define FB_TYPE_JSON_VALUES  (fb_json_values_get_type())
 #define FB_JSON_VALUES(obj)  (G_TYPE_CHECK_INSTANCE_CAST((obj), FB_TYPE_JSON_VALUES, FbJsonValues))

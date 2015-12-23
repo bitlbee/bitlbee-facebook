@@ -27,9 +27,9 @@
  * The MQTT connection.
  */
 
-#include <glib.h>
-#include <glib-object.h>
 #include <string.h>
+
+#include "facebook-glib.h"
 
 #define FB_TYPE_MQTT  (fb_mqtt_get_type())
 #define FB_MQTT(obj)  (G_TYPE_CHECK_INSTANCE_CAST((obj), FB_TYPE_MQTT, FbMqtt))

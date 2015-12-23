@@ -16,7 +16,6 @@
  */
 
 #include <bitlbee.h>
-#include <gio/gio.h>
 #include <sha1.h>
 #include <stdarg.h>
 #include <string.h>

@@ -16,7 +16,6 @@
  */
 
 #include <bitlbee.h>
-#include <glib/gprintf.h>
 #include <ssl_client.h>
 #include <stdarg.h>
 #include <string.h>

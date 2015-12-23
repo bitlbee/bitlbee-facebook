@@ -27,9 +27,9 @@
  * The HTTP client.
  */
 
-#include <glib.h>
-#include <glib-object.h>
 #include <http_client.h>
+
+#include "facebook-glib.h"
 
 #define FB_TYPE_HTTP  (fb_http_get_type())
 #define FB_HTTP(obj)  (G_TYPE_CHECK_INSTANCE_CAST((obj), FB_TYPE_HTTP, FbHttp))

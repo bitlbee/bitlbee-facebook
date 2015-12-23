@@ -19,6 +19,7 @@ facebook_la_SOURCES = \
 	facebook-api.h \
 	facebook-data.c \
 	facebook-data.h \
+	facebook-glib.h \
 	facebook-http.c \
 	facebook-http.h \
 	facebook-id.h \

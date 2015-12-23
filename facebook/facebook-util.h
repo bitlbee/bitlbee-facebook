@@ -27,8 +27,7 @@
  * The general utilities.
  */
 
-#include <glib.h>
-#include <glib-object.h>
+#include "facebook-glib.h"
 
 /**
  * FB_UTIL_ERROR:
