@@ -53,8 +53,6 @@ GDB, which should enable easier tracing of bugs.
 When posting to the issue tracker, please ensure any sensitive
 information has been stripped.
 
-Enable debugging output:
-
 For bitlbee and the plugin:
 
     $ export BITLBEE_DEBUG=1
