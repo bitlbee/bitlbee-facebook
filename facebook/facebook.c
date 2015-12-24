@@ -345,7 +345,7 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
                 fb_api_read(api, msg->uid, FALSE);
             }
 
-            imcb_buddy_msg(ic, uid, (gchar*) msg->text, flags, 0);
+            imcb_buddy_msg(ic, uid, (gchar *) msg->text, flags, 0);
             continue;
         }
 
@@ -362,7 +362,7 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
                 fb_api_read(api, msg->tid, TRUE);
             }
 
-            imcb_chat_msg(gc, uid, (gchar*) msg->text, flags, 0);
+            imcb_chat_msg(gc, uid, (gchar *) msg->text, flags, 0);
         }
     }
 }
@@ -865,11 +865,11 @@ fb_cmd_account(irc_t *irc, char **args, guint required, guint *offset)
 {
     account_t *a;
     account_t *acct;
-    guint acctc;
+    guint acctc = 0;
     guint size;
     guint oset;
 
-    for (acctc= 0, a = irc->b->accounts; a != NULL; a = a->next) {
+    for (a = irc->b->accounts; a != NULL; a = a->next) {
         if ((g_ascii_strcasecmp(a->prpl->name, "facebook") == 0) &&
             (a->ic != NULL))
         {

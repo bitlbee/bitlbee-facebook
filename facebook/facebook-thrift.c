@@ -323,7 +323,7 @@ fb_thrift_read_str(FbThrift *thft, gchar **value)
     }
 
     if (value != NULL) {
-        *value = (gchar*) data;
+        *value = (gchar *) data;
     }
 
     return TRUE;

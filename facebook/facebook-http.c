@@ -624,7 +624,7 @@ fb_http_values_parse(FbHttpValues *values, const gchar *data, gboolean isurl)
     }
 
     if (isurl) {
-        g_free((gchar*) data);
+        g_free((gchar *) data);
     }
 
     g_strfreev(params);

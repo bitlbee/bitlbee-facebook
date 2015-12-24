@@ -50,7 +50,7 @@
  *
  * The #GQuark of the domain of HTTP errors.
  */
-#define FB_HTTP_ERROR fb_http_error_quark()
+#define FB_HTTP_ERROR  fb_http_error_quark()
 
 typedef struct _FbHttp FbHttp;
 typedef struct _FbHttpClass FbHttpClass;

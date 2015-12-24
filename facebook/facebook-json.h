@@ -43,7 +43,7 @@
  *
  * The #GQuark of the domain of JSON errors.
  */
-#define FB_JSON_ERROR fb_json_error_quark()
+#define FB_JSON_ERROR  fb_json_error_quark()
 
 typedef struct _FbJsonValues FbJsonValues;
 typedef struct _FbJsonValuesClass FbJsonValuesClass;
