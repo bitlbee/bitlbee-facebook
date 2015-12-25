@@ -1910,6 +1910,7 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
         g_free(writeid);
         writeid = fb_json_values_next_str_dup(values, NULL);
         str = fb_json_values_next_str(values, NULL);
+        count++;
 
         if (g_strcmp0(str, "ARE_FRIENDS") != 0) {
             continue;
@@ -1926,8 +1927,6 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
         fb_http_values_parse(prms, user->icon, TRUE);
         user->csum = fb_http_values_dup_str(prms, "oh", &err);
         fb_http_values_free(prms);
-
-        count++;
         users = g_slist_prepend(users, user);
     }
 
