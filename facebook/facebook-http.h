@@ -345,7 +345,7 @@ fb_http_values_consume(FbHttpValues *values, FbHttpValues *consume);
  * fb_http_values_parse:
  * @values: The #FbHttpValues.
  * @data: The data string.
- * @isurl: TRUE if @data is a URL, otherwise FALSE.
+ * @isurl: #TRUE if @data is a URL, otherwise #FALSE.
  *
  * Parses and loads a parameter string into the #FbHttpValues.
  */

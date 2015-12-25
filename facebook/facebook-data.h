@@ -94,7 +94,7 @@ fb_data_new(account_t *acct);
  *
  * Loads the internal data from the underlying #account_t.
  *
- * Return: TRUE if all of the data was loaded, otherwise FALSE.
+ * Return: #TRUE if all of the data was loaded, otherwise #FALSE.
  */
 gboolean
 fb_data_load(FbData *fata);
