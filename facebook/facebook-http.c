@@ -594,11 +594,11 @@ fb_http_values_parse(FbHttpValues *values, const gchar *data, gboolean isurl)
     if (isurl) {
         data = strchr(data, '?');
 
-        if (data++ == NULL) {
+        if (data == NULL) {
             return;
         }
 
-        tail = strchr(data, '#');
+        tail = strchr(++data, '#');
 
         if (tail != NULL) {
             data = g_strndup(data, tail - data);
