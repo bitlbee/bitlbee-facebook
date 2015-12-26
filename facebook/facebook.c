@@ -308,6 +308,7 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
     gboolean selfmess;
     gchar tid[FB_ID_STRMAX];
     gchar uid[FB_ID_STRMAX];
+    gint64 tstamp;
     GSList *l;
     guint32 flags;
     struct groupchat *gc;
@@ -321,9 +322,9 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
 
     for (l = msgs; l != NULL; l = l->next) {
         msg = l->data;
-        FB_ID_TO_STR(msg->uid, uid);
-
         flags = 0;
+        tstamp = msg->tstamp / 1000;
+        FB_ID_TO_STR(msg->uid, uid);
 
         if (msg->flags & FB_API_MESSAGE_FLAG_SELF) {
             if (!selfmess) {
@@ -345,7 +346,7 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
                 fb_api_read(api, msg->uid, FALSE);
             }
 
-            imcb_buddy_msg(ic, uid, (gchar *) msg->text, flags, 0);
+            imcb_buddy_msg(ic, uid, (gchar *) msg->text, flags, tstamp);
             continue;
         }
 
@@ -362,7 +363,7 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
                 fb_api_read(api, msg->tid, TRUE);
             }
 
-            imcb_chat_msg(gc, uid, (gchar *) msg->text, flags, 0);
+            imcb_chat_msg(gc, uid, (gchar *) msg->text, flags, tstamp);
         }
     }
 }
