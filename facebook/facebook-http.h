@@ -19,7 +19,7 @@
 #define _FACEBOOK_HTTP_H_
 
 /**
- * SECTION:api
+ * SECTION:http
  * @section_id: facebook-http
  * @short_description: <filename>facebook-http.h</filename>
  * @title: HTTP Client
