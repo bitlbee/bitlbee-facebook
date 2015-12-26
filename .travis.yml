@@ -36,11 +36,10 @@ install:
   - .travis/bitlbee.sh
 
 script:
-  - curl -s "https://scan.coverity.com/scripts/travisci_build_coverity_scan.sh" | bash || true
   - CFLAGS="-Werror" ./autogen.sh --enable-warnings
-  - make
-  - make clean
-  - scan-build -k --status-bugs make
+  - make all clean
+  - scan-build -k --status-bugs make all clean
 
 after_success:
+  - curl -s "https://scan.coverity.com/scripts/travisci_build_coverity_scan.sh" | bash || true
   - .travis/obs.sh
