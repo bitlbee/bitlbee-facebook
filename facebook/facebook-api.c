@@ -1881,8 +1881,10 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
 {
     const gchar *str;
     FbApi *api = data;
+    FbApiPrivate *priv = api->priv;
     FbApiUser *user;
     FbHttpValues *prms;
+    FbId uid;
     FbJsonValues *values;
     gboolean complete;
     gchar *writeid = NULL;
@@ -1899,9 +1901,9 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
     fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE,
                        "$.graph_api_write_id");
     fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE,
-                       "$.represented_profile.friendship_status");
-    fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE,
                        "$.represented_profile.id");
+    fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE,
+                       "$.represented_profile.friendship_status");
     fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE,
                        "$.structured_name.text");
     fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE,
@@ -1912,17 +1914,20 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
     while (fb_json_values_update(values, &err)) {
         g_free(writeid);
         writeid = fb_json_values_next_str_dup(values, NULL);
-        str = fb_json_values_next_str(values, NULL);
         count++;
 
-        if (g_strcmp0(str, "ARE_FRIENDS") != 0) {
+        str = fb_json_values_next_str(values, "0");
+        uid = FB_ID_FROM_STR(str);
+        str = fb_json_values_next_str(values, NULL);
+
+        if ((g_strcmp0(str, "ARE_FRIENDS") != 0) &&
+            (uid != priv->uid))
+        {
             continue;
         }
 
         user = fb_api_user_dup(NULL, FALSE);
-        str = fb_json_values_next_str(values, "0");
-
-        user->uid = FB_ID_FROM_STR(str);
+        user->uid = uid;
         user->name = fb_json_values_next_str_dup(values, NULL);
         user->icon = fb_json_values_next_str_dup(values, NULL);
 
