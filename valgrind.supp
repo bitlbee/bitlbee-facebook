@@ -37,3 +37,11 @@
     ...
     fun:g_type_register_static
 }
+
+{
+    leak:g_type_register_static
+    Memcheck:Leak
+    match-leak-kinds: possible
+    ...
+    fun:g_zlib_compressor_class_intern_init
+}
