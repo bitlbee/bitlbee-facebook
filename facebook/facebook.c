@@ -29,6 +29,56 @@
 static void
 fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data);
 
+static struct groupchat *
+fb_groupchat_new(struct im_connection *ic, FbId tid, const gchar *name)
+{
+    FbApi *api;
+    FbData *fata = ic->proto_data;
+    gchar stid[FB_ID_STRMAX];
+    irc_channel_t *ch;
+    struct groupchat *gc;
+
+    FB_ID_TO_STR(tid, stid);
+
+    if (bee_chat_by_title(ic->bee, ic, stid) != NULL) {
+        imcb_error(ic, "Failed to create chat: %" FB_ID_FORMAT, tid);
+        return NULL;
+    }
+
+    if (name != NULL) {
+        if (strchr(CTYPES, name[0]) != NULL) {
+            name++;
+        }
+
+        /* Let the hackery being... */
+        gc = imcb_chat_new(ic, stid);
+        imcb_chat_name_hint(gc, name);
+
+        ch = gc->ui_data;
+        ch->flags |= IRC_CHANNEL_CHAT_PICKME;
+
+        /* Setup the channel as a room */
+        set_setstr(&ch->set, "type",      "chat");
+        set_setstr(&ch->set, "chat_type", "room");
+        set_setstr(&ch->set, "account",   ic->acc->tag);
+        set_setstr(&ch->set, "room",      stid);
+
+        /* Free and recreate with new channel settings */
+        imcb_chat_free(gc);
+    }
+
+    gc = imcb_chat_new(ic, stid);
+    fb_data_add_groupchat(fata, gc);
+
+    ch = gc->ui_data;
+    ch->flags &= ~IRC_CHANNEL_CHAT_PICKME;
+
+    api = fb_data_get_api(fata);
+    imcb_chat_add_buddy(gc, ic->acc->user);
+    fb_api_thread(api, tid);
+    return gc;
+}
+
 static gboolean
 fb_channel_join(struct im_connection *ic, FbId tid, const gchar **channel)
 {
@@ -304,10 +354,11 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
     FbApiMessage *msg;
     FbData *fata = data;
     gboolean mark;
-    gboolean open;
     gboolean selfmess;
+    gchar *str;
     gchar tid[FB_ID_STRMAX];
     gchar uid[FB_ID_STRMAX];
+    gint open = 0;
     gint64 tstamp;
     GSList *l;
     guint32 flags;
@@ -317,8 +368,14 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
     ic = fb_data_get_connection(fata);
     acct = ic->acc;
     mark = set_getbool(&acct->set, "mark_read");
-    open = set_getbool(&acct->set, "group_chat_open");
     selfmess = (set_find(&ic->bee->set, "self_messages") != NULL);
+    str = set_getstr(&acct->set, "group_chat_open");
+
+    if (is_bool(str) && bool2int(str)) {
+        open = 1;
+    } else if (g_strcmp0(str, "all") == 0) {
+        open = 2;
+    }
 
     for (l = msgs; l != NULL; l = l->next) {
         msg = l->data;
@@ -353,9 +410,12 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
         FB_ID_TO_STR(msg->tid, tid);
         gc = bee_chat_by_title(ic->bee, ic, tid);
 
-        if ((gc == NULL) && open) {
-            fb_channel_join(ic, msg->tid, NULL);
-            gc = bee_chat_by_title(ic->bee, ic, tid);
+        if ((gc == NULL) && (open != 0)) {
+            if (fb_channel_join(ic, msg->tid, NULL)) {
+                gc = bee_chat_by_title(ic->bee, ic, tid);
+            } else if (open == 2) {
+                gc = fb_groupchat_new(ic, msg->tid, NULL);
+            }
         }
 
         if (gc != NULL) {
@@ -557,54 +617,14 @@ fb_cb_api_typing(FbApi *api, FbApiTyping *typg, gpointer data)
     imcb_buddy_typing(ic, uid, flags);
 }
 
-static struct groupchat *
-fb_groupchat_new(struct im_connection *ic, FbId tid, const gchar *name)
+static char *
+fb_eval_open(struct set *set, char *value)
 {
-    FbApi *api;
-    FbData *fata = ic->proto_data;
-    gchar stid[FB_ID_STRMAX];
-    irc_channel_t *ch;
-    struct groupchat *gc;
-
-    FB_ID_TO_STR(tid, stid);
-
-    if (bee_chat_by_title(ic->bee, ic, stid) != NULL) {
-        imcb_error(ic, "Failed to create chat: %" FB_ID_FORMAT, tid);
-        return NULL;
+    if (!is_bool(value) && (g_strcmp0(value, "all") != 0)) {
+        return SET_INVALID;
     }
 
-    if (name != NULL) {
-        if (strchr(CTYPES, name[0]) != NULL) {
-            name++;
-        }
-
-        /* Let the hackery being... */
-        gc = imcb_chat_new(ic, stid);
-        imcb_chat_name_hint(gc, name);
-
-        ch = gc->ui_data;
-        ch->flags |= IRC_CHANNEL_CHAT_PICKME;
-
-        /* Setup the channel as a room */
-        set_setstr(&ch->set, "type",      "chat");
-        set_setstr(&ch->set, "chat_type", "room");
-        set_setstr(&ch->set, "account",   ic->acc->tag);
-        set_setstr(&ch->set, "room",      stid);
-
-        /* Free and recreate with new channel settings */
-        imcb_chat_free(gc);
-    }
-
-    gc = imcb_chat_new(ic, stid);
-    fb_data_add_groupchat(fata, gc);
-
-    ch = gc->ui_data;
-    ch->flags &= ~IRC_CHANNEL_CHAT_PICKME;
-
-    api = fb_data_get_api(fata);
-    imcb_chat_add_buddy(gc, ic->acc->user);
-    fb_api_thread(api, tid);
-    return gc;
+    return value;
 }
 
 static void
@@ -630,7 +650,7 @@ fb_init(account_t *acct)
     s = set_add(&acct->set, "uid", NULL, NULL, acct);
     s->flags = SET_NULL_OK | SET_HIDDEN;
 
-    set_add(&acct->set, "group_chat_open", "false", set_eval_bool, acct);
+    set_add(&acct->set, "group_chat_open", "false", fb_eval_open, acct);
     set_add(&acct->set, "mark_read", "false", set_eval_bool, acct);
     set_add(&acct->set, "show_unread", "false", set_eval_bool, acct);
     set_add(&acct->set, "sync_interval", "30", set_eval_int, acct);
