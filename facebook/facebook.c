@@ -885,7 +885,7 @@ static account_t *
 fb_cmd_account(irc_t *irc, char **args, guint required, guint *offset)
 {
     account_t *a;
-    account_t *acct;
+    account_t *acct = NULL;
     guint acctc = 0;
     guint size;
     guint oset;
