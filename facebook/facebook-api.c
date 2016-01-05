@@ -47,6 +47,7 @@ struct _FbApiPrivate
     FbHttp *http;
     FbMqtt *mqtt;
     GHashTable *data;
+    gboolean retrying;
 
     FbId uid;
     gint64 sid;
@@ -789,7 +790,15 @@ static void
 fb_api_cb_mqtt_error(FbMqtt *mqtt, GError *error, gpointer data)
 {
     FbApi *api = data;
-    g_signal_emit_by_name(api, "error", error);
+    FbApiPrivate *priv = api->priv;
+
+    if (!priv->retrying) {
+        priv->retrying = TRUE;
+        fb_util_debug_info("Attempting to reconnect the MQTT stream...");
+        fb_api_connect(api, priv->invisible);
+    } else {
+        g_signal_emit_by_name(api, "error", error);
+    }
 }
 
 static void
@@ -940,6 +949,11 @@ fb_api_connect_queue(FbApi *api)
     if (!g_queue_is_empty(priv->msgs)) {
         msg = g_queue_peek_head(priv->msgs);
         fb_api_message_send(api, msg);
+    }
+
+    if (priv->retrying) {
+        priv->retrying = FALSE;
+        fb_util_debug_info("Reconnected the MQTT stream");
     }
 }
 
