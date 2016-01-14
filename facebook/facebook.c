@@ -541,10 +541,9 @@ fb_cb_api_threads(FbApi *api, GSList *thrds, gpointer data)
     FbApiThread *thrd;
     FbApiUser *user;
     FbData *fata = data;
-    GSList *phrds = NULL;
     GSList *l;
     GSList *m;
-    GString *lines;
+    GString *line;
     guint i;
     guint j;
     struct im_connection *ic;
@@ -552,55 +551,45 @@ fb_cb_api_threads(FbApi *api, GSList *thrds, gpointer data)
     ic = fb_data_get_connection(fata);
     fb_data_clear_threads(fata);
 
-    for (l = thrds, i = 0; (l != NULL) && (i < 25); l = l->next, i++) {
-        thrd = l->data;
-
-        if (g_slist_length(thrd->users) >= 2) {
-            phrds = g_slist_prepend(phrds, thrd);
-        }
-    }
-
-    if (phrds == NULL) {
+    if (thrds == NULL) {
         imcb_log(ic, "No chats to display.");
         return;
     }
 
-    lines = g_string_new(NULL);
+    line = g_string_new(NULL);
     imcb_log(ic, "%2s  %-20s  %s", "ID", "Topic", "Participants");
-    phrds = g_slist_reverse(phrds);
 
-    for (l = phrds, i = 1; l != NULL; l = l->next, i++) {
+    for (l = thrds, i = 1; l != NULL; l = l->next, i++) {
         thrd = l->data;
         fb_data_add_thread_tail(fata, thrd->tid);
-        g_string_printf(lines, "%2d", i);
+        g_string_printf(line, "%2d", i);
 
         if (thrd->topic != NULL) {
             if (strlen(thrd->topic) > 20) {
                 for (j = 16; g_ascii_isspace(thrd->topic[j]) && (j > 0); j--);
-                g_string_append_printf(lines, "  %-.*s...", ++j, thrd->topic);
-                g_string_append_printf(lines, "%*s", 17 - j, "");
+                g_string_append_printf(line, "  %-.*s...", ++j, thrd->topic);
+                g_string_append_printf(line, "%*s", 17 - j, "");
             } else {
-                g_string_append_printf(lines, "  %-20s", thrd->topic);
+                g_string_append_printf(line, "  %-20s", thrd->topic);
             }
         } else {
-            g_string_append_printf(lines, "  %20s", "");
+            g_string_append_printf(line, "  %20s", "");
         }
 
         for (m = thrd->users, j = 0; (m != NULL) && (j < 3); m = m->next, j++) {
             user = m->data;
-            g_string_append(lines, (j != 0) ? ", " : "  ");
-            g_string_append(lines, user->name);
+            g_string_append(line, (j != 0) ? ", " : "  ");
+            g_string_append(line, user->name);
         }
 
         if (m != NULL) {
-            g_string_append(lines, "...");
+            g_string_append(line, ", ...");
         }
 
-        imcb_log(ic, "%s", lines->str);
+        imcb_log(ic, "%s", line->str);
     }
 
-    g_string_free(lines, TRUE);
-    g_slist_free(phrds);
+    g_string_free(line, TRUE);
 }
 
 static void
