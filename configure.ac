@@ -15,7 +15,7 @@
 
 AC_INIT(
     [bitlbee-facebook],
-    [0.1.0],
+    [1.0.0],
     [https://github.com/jgeboski/bitlbee-facebook/issues],
     [bitlbee-facebook],
     [https://github.com/jgeboski/bitlbee-facebook],
