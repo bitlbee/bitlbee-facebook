@@ -1936,8 +1936,13 @@ fb_api_cb_contact(FbHttpRequest *req, gpointer data)
 
     prms = fb_http_values_new();
     fb_http_values_parse(prms, user.icon, TRUE);
-    user.csum = fb_http_values_dup_str(prms, "oh", &err);
+    user.csum = fb_http_values_dup_str(prms, "oh", NULL);
     fb_http_values_free(prms);
+
+    if (G_UNLIKELY(user.csum == NULL)) {
+        /* Revert to the icon URL as the unique checksum */
+        user.csum = g_strdup(user.icon);
+    }
 
     g_signal_emit_by_name(api, "contact", &user);
     fb_api_user_reset(&user, TRUE);
@@ -2016,8 +2021,14 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
 
         prms = fb_http_values_new();
         fb_http_values_parse(prms, user->icon, TRUE);
-        user->csum = fb_http_values_dup_str(prms, "oh", &err);
+        user->csum = fb_http_values_dup_str(prms, "oh", NULL);
         fb_http_values_free(prms);
+
+        if (G_UNLIKELY(user->csum == NULL)) {
+            /* Revert to the icon URL as the unique checksum */
+            user->csum = g_strdup(user->icon);
+        }
+
         users = g_slist_prepend(users, user);
     }
 
