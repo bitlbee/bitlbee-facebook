@@ -243,7 +243,7 @@ fb_cb_api_contacts(FbApi *api, GSList *users, gboolean complete, gpointer data)
         }
 
         if (GPOINTER_TO_INT(bu->data)) {
-            bu->data = NULL;
+            bu->data = GINT_TO_POINTER(FALSE);
         } else {
             imcb_remove_buddy(ic, bu->handle, NULL);
         }
@@ -870,6 +870,18 @@ fb_away_states(struct im_connection *ic)
     return m;
 }
 
+static void
+fb_buddy_data_add(struct bee_user *bu)
+{
+    bu->data = GINT_TO_POINTER(FALSE);
+}
+
+static void
+fb_buddy_data_free(struct bee_user *bu)
+{
+    bu->data = NULL;
+}
+
 static account_t *
 fb_cmd_account(irc_t *irc, char **args, guint required, guint *offset)
 {
@@ -1068,7 +1080,9 @@ init_plugin(void)
         .chat_join = fb_chat_join,
         .chat_topic = fb_chat_topic,
         .away_states = fb_away_states,
-        .handle_cmp = g_strcmp0
+        .handle_cmp = g_strcmp0,
+        .buddy_data_add = fb_buddy_data_add,
+        .buddy_data_free = fb_buddy_data_free
     };
 
 #if !GLIB_CHECK_VERSION(2, 36, 0)
