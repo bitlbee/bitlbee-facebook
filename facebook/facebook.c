@@ -142,14 +142,17 @@ fb_cb_api_connect(FbApi *api, gpointer data)
     account_t *acct;
     FbData *fata = data;
     struct im_connection *ic;
+    gint logged_in;
 
     ic = fb_data_get_connection(fata);
     acct = ic->acc;
 
+    logged_in = (ic->flags & OPT_LOGGED_IN);
+
     fb_data_save(fata);
     imcb_connected(ic);
 
-    if (set_getbool(&acct->set, "show_unread")) {
+    if (set_getbool(&acct->set, "show_unread") && !logged_in) {
         fb_api_unread(api);
     }
 }
