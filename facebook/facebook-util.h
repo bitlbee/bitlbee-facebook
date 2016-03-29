@@ -37,6 +37,35 @@
 #define FB_UTIL_ERROR  fb_util_error_quark()
 
 /**
+ * FB_UTIL_PTRBIT_GET:
+ * @p: Pointer used to store flags.
+ * @b: Bit to get from p.
+ *
+ * Get bit b from pointer p.
+ *
+ * Returns: Value of bit b in pointer p.
+ */
+#define FB_UTIL_PTRBIT_GET(p, b) \
+    (GPOINTER_TO_INT((p)) & (1 << (b)))
+
+/**
+ * FB_UTIL_PTRBIT_SET:
+ * @p: Pointer used to store flags.
+ * @b: Bit to set in p.
+ * @v: Set or clear bit b
+ *
+ * Set bit b in pointer p based on value v
+ */
+#define FB_UTIL_PTRBIT_SET(p, b, v)     \
+    G_STMT_START {                      \
+        gint __tmp;                     \
+        __tmp = GPOINTER_TO_INT((p));   \
+        __tmp &= ~(1 << (b));           \
+        __tmp |= ((v) << (b));          \
+        (p) = GINT_TO_POINTER(__tmp);   \
+    } G_STMT_END
+
+/**
  * FbDebugLevel:
  * @FB_UTIL_DEBUG_LEVEL_MISC: Miscellaneous message.
  * @FB_UTIL_DEBUG_LEVEL_INFO: Information message.
