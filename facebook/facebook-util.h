@@ -38,31 +38,31 @@
 
 /**
  * FB_UTIL_PTRBIT_GET:
- * @p: Pointer used to store flags.
- * @b: Bit to get from p.
+ * @p: The pointer.
+ * @b: The bit index.
  *
- * Get bit b from pointer p.
+ * Gets a bit from the pointer.
  *
- * Returns: Value of bit b in pointer p.
+ * Returns: The bit value.
  */
 #define FB_UTIL_PTRBIT_GET(p, b) \
-    (GPOINTER_TO_INT((p)) & (1 << (b)))
+    (GPOINTER_TO_INT(p) & (1 << (b)))
 
 /**
  * FB_UTIL_PTRBIT_SET:
- * @p: Pointer used to store flags.
- * @b: Bit to set in p.
- * @v: Set or clear bit b
+ * @p: The pointer.
+ * @b: The bit index.
+ * @v: The bit value.
  *
- * Set bit b in pointer p based on value v
+ * Sets a bit in the pointer.
  */
-#define FB_UTIL_PTRBIT_SET(p, b, v)     \
-    G_STMT_START {                      \
-        gint __tmp;                     \
-        __tmp = GPOINTER_TO_INT((p));   \
-        __tmp &= ~(1 << (b));           \
-        __tmp |= ((v) << (b));          \
-        (p) = GINT_TO_POINTER(__tmp);   \
+#define FB_UTIL_PTRBIT_SET(p, b, v) \
+    G_STMT_START { \
+        gint __tmp; \
+        __tmp = GPOINTER_TO_INT(p); \
+        __tmp &= ~(1 << (b)); \
+        __tmp |= ((v) << (b)); \
+        (p) = GINT_TO_POINTER(__tmp); \
     } G_STMT_END
 
 /**

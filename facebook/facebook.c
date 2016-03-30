@@ -26,13 +26,6 @@
 #define OPT_SELFMESSAGE 0
 #endif
 
-/**
- * FbPtrBit
- * @FB_PTRBIT_NEW_BUDDY: bit to set if buddy was just addded
- * @FB_PTRBIT_UNREAD_MSG: bit to set if buddy has unread messages
- *
- * Bits used for flags
- */
 typedef enum {
     FB_PTRBIT_NEW_BUDDY,
     FB_PTRBIT_UNREAD_MSG
@@ -365,6 +358,7 @@ static void
 fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
 {
     account_t *acct;
+    bee_user_t *bu;
     FbApiMessage *msg;
     FbData *fata = data;
     gboolean mark;
@@ -378,15 +372,9 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
     guint32 flags;
     struct groupchat *gc;
     struct im_connection *ic;
-    bee_user_t *bu;
 
     ic = fb_data_get_connection(fata);
     acct = ic->acc;
-    if (g_strcmp0(set_getstr(&acct->set, "mark_read"), "available") == 0) {
-        mark = !fb_api_is_invisible(api);
-    } else {
-        mark = set_getbool(&acct->set, "mark_read");
-    }
     selfmess = (set_find(&ic->bee->set, "self_messages") != NULL);
     str = set_getstr(&acct->set, "group_chat_open");
 
@@ -394,6 +382,14 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
         open = 1;
     } else if (g_strcmp0(str, "all") == 0) {
         open = 2;
+    }
+
+    str = set_getstr(&acct->set, "mark_read");
+
+    if (g_strcmp0(str, "available") == 0) {
+        mark = !fb_api_is_invisible(api);
+    } else {
+        mark = set_getbool(&acct->set, "mark_read");
     }
 
     for (l = msgs; l != NULL; l = l->next) {
@@ -411,6 +407,7 @@ fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data)
         }
 
         bu = bee_user_by_handle(ic->bee, ic, uid);
+
         if (bu == NULL) {
             msg = fb_api_message_dup(msg, TRUE);
             fb_data_add_message(fata, msg);
@@ -643,11 +640,11 @@ fb_eval_open(struct set *set, char *value)
 static char *
 fb_eval_mark_read(struct set *set, char *value)
 {
-	if (!is_bool(value)  && (g_strcmp0(value, "available") != 0)) {
-		return SET_INVALID;
-	}
+    if (!is_bool(value)  && (g_strcmp0(value, "available") != 0)) {
+        return SET_INVALID;
+    }
 
-	return value;
+    return value;
 }
 
 static void
@@ -768,21 +765,25 @@ fb_logout(struct im_connection *ic)
 static int
 fb_buddy_msg(struct im_connection *ic, char *to, char *message, int flags)
 {
+    account_t *acct = ic->acc;
+    bee_user_t *bu;
     FbApi *api;
     FbData *fata = ic->proto_data;
     FbId uid;
-    account_t *acct;
-    bee_user_t *bu;
 
-    acct = ic->acc;
     api = fb_data_get_api(fata);
     uid = FB_ID_FROM_STR(to);
-    fb_api_message(api, uid, FALSE, message);
     bu = bee_user_by_handle(ic->bee, ic, to);
-    if (set_getbool(&acct->set, "mark_read_reply") && bu != NULL && FB_UTIL_PTRBIT_GET(bu->data, FB_PTRBIT_UNREAD_MSG)) {
+
+    if (set_getbool(&acct->set, "mark_read_reply") &&
+        (bu != NULL) &&
+        FB_UTIL_PTRBIT_GET(bu->data, FB_PTRBIT_UNREAD_MSG))
+    {
         fb_api_read(api, uid, FALSE);
         FB_UTIL_PTRBIT_SET(bu->data, FB_PTRBIT_UNREAD_MSG, FALSE);
     }
+
+    fb_api_message(api, uid, FALSE, message);
     return 0;
 }
 
@@ -870,16 +871,18 @@ fb_chat_leave(struct groupchat *gc)
 static void
 fb_chat_msg(struct groupchat *gc, char *message, int flags)
 {
+    account_t *acct = gc->ic->acc;
     FbApi *api;
     FbData *fata = gc->ic->proto_data;
     FbId tid;
-    account_t *acct;
 
-    acct = gc->ic->acc;
     api = fb_data_get_api(fata);
     tid = FB_ID_FROM_STR(gc->title);
     fb_api_message(api, tid, TRUE, message);
-    if (set_getbool(&acct->set, "mark_read_reply") && GPOINTER_TO_INT(gc->data)) {
+
+    if (set_getbool(&acct->set, "mark_read_reply") &&
+        GPOINTER_TO_INT(gc->data))
+    {
         fb_api_read(api, tid, TRUE);
         gc->data = GINT_TO_POINTER(TRUE);
     }
