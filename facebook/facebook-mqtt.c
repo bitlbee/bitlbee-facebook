@@ -565,6 +565,9 @@ fb_mqtt_cb_open(gpointer data, gint error, gpointer ssl,
     gint fd;
 
     if ((ssl == NULL) || (error != SSL_OK)) {
+        /* Set this to null to avoid freeing it in fb_mqtt_close() */
+        priv->ssl = NULL;
+
         fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL, "Failed to connect");
         return FALSE;
     }
