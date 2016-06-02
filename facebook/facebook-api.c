@@ -1890,13 +1890,35 @@ fb_api_auth(FbApi *api, const gchar *user, const gchar *pass)
                     fb_api_cb_auth);
 }
 
+static gchar *
+fb_api_user_icon_checksum(gchar *icon)
+{
+    gchar *csum;
+    FbHttpValues *prms;
+
+    if (G_UNLIKELY(icon == NULL)) {
+        return NULL;
+    }
+
+    prms = fb_http_values_new();
+    fb_http_values_parse(prms, icon, TRUE);
+    csum = fb_http_values_dup_str(prms, "oh", NULL);
+    fb_http_values_free(prms);
+
+    if (G_UNLIKELY(csum == NULL)) {
+        /* Revert to the icon URL as the unique checksum */
+        csum = g_strdup(icon);
+    }
+
+    return csum;
+}
+
 static void
 fb_api_cb_contact(FbHttpRequest *req, gpointer data)
 {
     const gchar *str;
     FbApi *api = data;
     FbApiUser user;
-    FbHttpValues *prms;
     FbJsonValues *values;
     GError *err = NULL;
     JsonNode *node;
@@ -1918,7 +1940,7 @@ fb_api_cb_contact(FbHttpRequest *req, gpointer data)
     values = fb_json_values_new(node);
     fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE, "$.id");
     fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE, "$.name");
-    fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE,
+    fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
                        "$.profile_pic_large.uri");
     fb_json_values_update(values, &err);
 
@@ -1934,15 +1956,7 @@ fb_api_cb_contact(FbHttpRequest *req, gpointer data)
     user.name = fb_json_values_next_str_dup(values, NULL);
     user.icon = fb_json_values_next_str_dup(values, NULL);
 
-    prms = fb_http_values_new();
-    fb_http_values_parse(prms, user.icon, TRUE);
-    user.csum = fb_http_values_dup_str(prms, "oh", NULL);
-    fb_http_values_free(prms);
-
-    if (G_UNLIKELY(user.csum == NULL)) {
-        /* Revert to the icon URL as the unique checksum */
-        user.csum = g_strdup(user.icon);
-    }
+    user.csum = fb_api_user_icon_checksum(user.icon);
 
     g_signal_emit_by_name(api, "contact", &user);
     fb_api_user_reset(&user, TRUE);
@@ -1972,7 +1986,6 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
     FbApi *api = data;
     FbApiPrivate *priv = api->priv;
     FbApiUser *user;
-    FbHttpValues *prms;
     FbId uid;
     FbJsonValues *values;
     gboolean complete;
@@ -1991,7 +2004,7 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
                        "$.represented_profile.friendship_status");
     fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE,
                        "$.structured_name.text");
-    fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE,
+    fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
                        "$.hugePictureUrl.uri");
     fb_json_values_set_array(values, FALSE, "$.viewer.messenger_contacts"
                                              ".nodes");
@@ -2012,15 +2025,7 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
         user->name = fb_json_values_next_str_dup(values, NULL);
         user->icon = fb_json_values_next_str_dup(values, NULL);
 
-        prms = fb_http_values_new();
-        fb_http_values_parse(prms, user->icon, TRUE);
-        user->csum = fb_http_values_dup_str(prms, "oh", NULL);
-        fb_http_values_free(prms);
-
-        if (G_UNLIKELY(user->csum == NULL)) {
-            /* Revert to the icon URL as the unique checksum */
-            user->csum = g_strdup(user->icon);
-        }
+        user->csum = fb_api_user_icon_checksum(user->icon);
 
         users = g_slist_prepend(users, user);
     }
