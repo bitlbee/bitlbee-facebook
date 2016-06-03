@@ -528,6 +528,10 @@ fb_http_urlcmp(const gchar *url1, const gchar *url2, gboolean protocol)
         return url1 == url2;
     }
 
+    if (strstr(url1, url2) != NULL || strstr(url2, url1) != NULL) {
+        return TRUE;
+    }
+
     if (!url_set(&purl1, url1) || !url_set(&purl2, url2)) {
         return g_ascii_strcasecmp(url1, url2) == 0;
     }
