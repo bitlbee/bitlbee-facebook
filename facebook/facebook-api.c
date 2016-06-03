@@ -589,6 +589,12 @@ fb_api_json_chk(FbApi *api, gconstpointer data, gssize size, JsonNode **node)
         priv->token = NULL;
     }
 
+    /* 509 is used for "invalid attachment id" */
+    if (code == 509) {
+        errc = FB_API_ERROR_NONFATAL;
+        success = FALSE;
+    }
+
     str = fb_json_values_next_str(values, NULL);
 
     if ((g_strcmp0(str, "ERROR_QUEUE_NOT_FOUND") == 0) ||

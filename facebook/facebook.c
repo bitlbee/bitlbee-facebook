@@ -294,7 +294,10 @@ fb_cb_api_error(FbApi *api, GError *error, gpointer data)
     ic = fb_data_get_connection(fata);
     fb_util_debug_error("%s", error->message);
     imcb_error(ic, "%s", error->message);
-    imc_logout(ic, recon);
+
+    if (!g_error_matches(error, FB_API_ERROR, FB_API_ERROR_NONFATAL)) {
+        imc_logout(ic, recon);
+    }
 }
 
 static void

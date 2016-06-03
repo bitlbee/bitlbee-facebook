@@ -341,6 +341,7 @@ typedef struct _FbApiUser FbApiUser;
  * @FB_API_ERROR_GENERAL: General failure.
  * @FB_API_ERROR_AUTH: Authentication failure.
  * @FB_API_ERROR_QUEUE: Queue failure.
+ * @FB_API_ERROR_NONFATAL: Other non-fatal errors.
  *
  * The error codes for the #FB_API_ERROR domain.
  */
@@ -348,7 +349,8 @@ typedef enum
 {
     FB_API_ERROR_GENERAL,
     FB_API_ERROR_AUTH,
-    FB_API_ERROR_QUEUE
+    FB_API_ERROR_QUEUE,
+    FB_API_ERROR_NONFATAL
 } FbApiError;
 
 /**
