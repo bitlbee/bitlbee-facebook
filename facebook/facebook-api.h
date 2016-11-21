@@ -82,6 +82,13 @@
 #define FB_API_SECRET  "374e60f8b9bb6b8cbb30f78030438895"
 
 /**
+ * FB_API_AGENT:
+ *
+ * The HTTP User-Agent header.
+ */
+#define FB_API_AGENT  "Facebook plugin / BitlBee / " PACKAGE_VERSION
+
+/**
  * FB_API_URL_ATTACH:
  *
  * The URL for attachment URL requests.

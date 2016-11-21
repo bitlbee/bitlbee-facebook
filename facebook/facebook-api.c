@@ -477,7 +477,7 @@ fb_api_init(FbApi *api)
     priv = G_TYPE_INSTANCE_GET_PRIVATE(api, FB_TYPE_API, FbApiPrivate);
     api->priv = priv;
 
-    priv->http = fb_http_new(NULL);
+    priv->http = fb_http_new(FB_API_AGENT);
     priv->mqtt = fb_mqtt_new();
     priv->msgs = g_queue_new();
     priv->data = g_hash_table_new_full(g_direct_hash, g_direct_equal,
