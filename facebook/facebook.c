@@ -281,6 +281,14 @@ fb_cb_api_error(FbApi *api, GError *error, gpointer data)
     gboolean recon;
     struct im_connection *ic;
 
+    if (!error) {
+        ic = fb_data_get_connection(fata);
+        if (ic) {
+            imcb_error(ic, "null error in fb_cb_api_error");
+            return;
+        }
+    }
+
     if (g_error_matches(error, FB_API_ERROR, FB_API_ERROR_QUEUE)) {
         /* Save the reset data */
         fb_data_save(fata);
