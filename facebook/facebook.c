@@ -199,15 +199,32 @@ fb_cb_sync_contacts(gpointer data, gint fd, b_input_condition cond)
 }
 
 static void
+fb_sync_contacts_add_timeout(FbData *fata)
+{
+    gint sync;
+    struct im_connection *ic = fb_data_get_connection(fata);
+    account_t *acct = ic->acc;
+
+    sync = set_getint(&acct->set, "sync_interval");
+
+    if (sync < 5) {
+        set_setint(&acct->set, "sync_interval", 5);
+        sync = 5;
+    }
+
+    sync *= 60 * 1000;
+    fb_data_add_timeout(fata, "sync-contacts", sync, fb_cb_sync_contacts,
+                        fata);
+}
+
+static void
 fb_cb_api_contacts(FbApi *api, GSList *users, gboolean complete, gpointer data)
 {
-    account_t *acct;
     bee_user_t *bu;
     FbApiUser *user;
     FbData *fata = data;
     FbId muid;
     gchar uid[FB_ID_STRMAX];
-    gint sync;
     GSList *l;
     GValue val = G_VALUE_INIT;
     struct im_connection *ic;
@@ -261,17 +278,7 @@ fb_cb_api_contacts(FbApi *api, GSList *users, gboolean complete, gpointer data)
         fb_api_connect(api, FALSE);
     }
 
-    acct = ic->acc;
-    sync = set_getint(&acct->set, "sync_interval");
-
-    if (sync < 5) {
-        set_setint(&acct->set, "sync_interval", 5);
-        sync = 5;
-    }
-
-    sync *= 60 * 1000;
-    fb_data_add_timeout(fata, "sync-contacts", sync, fb_cb_sync_contacts,
-                        fata);
+    fb_sync_contacts_add_timeout(fata);
 }
 
 static void
