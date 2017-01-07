@@ -436,6 +436,23 @@ fb_api_class_init(FbApiClass *klass)
                  1, FB_TYPE_ID);
 
     /**
+     * FbApi::thread-kicked:
+     * @api: The #FbApi.
+     * @thrd: The #FbApiThread.
+     *
+     * Emitted upon the reply of a thread request when the user is no longer
+     * part of that thread. This is emitted as a result of #fb_api_thread().
+     */
+    g_signal_new("thread-kicked",
+                 G_TYPE_FROM_CLASS(klass),
+                 G_SIGNAL_ACTION,
+                 0,
+                 NULL, NULL,
+                 fb_marshal_VOID__POINTER,
+                 G_TYPE_NONE,
+                 1, G_TYPE_POINTER);
+
+    /**
      * FbApi::threads:
      * @api: The #FbApi.
      * @thrds: The #GSList of #FbApiThread's.
@@ -2591,7 +2608,6 @@ fb_api_thread_parse(FbApi *api, FbApiThread *thrd, JsonNode *root,
     }
 
     if (num_users < 2 || !haself) {
-        fb_api_thread_reset(thrd, TRUE);
         g_object_unref(values);
         return FALSE;
     }
@@ -2626,8 +2642,12 @@ fb_api_cb_thread(FbHttpRequest *req, gpointer data)
 
     if (!fb_api_thread_parse(api, &thrd, node, &err)) {
         if (G_LIKELY(err == NULL)) {
-            fb_api_error(api, FB_API_ERROR_GENERAL,
-                         "Failed to parse thread information");
+            if (thrd.tid) {
+                g_signal_emit_by_name(api, "thread-kicked", &thrd);
+            } else {
+                fb_api_error(api, FB_API_ERROR_GENERAL,
+                             "Failed to parse thread information");
+            }
         } else {
             fb_api_error_emit(api, err);
         }

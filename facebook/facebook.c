@@ -571,6 +571,33 @@ fb_cb_api_thread_create(FbApi *api, FbId tid, gpointer data)
 }
 
 static void
+fb_cb_api_thread_kicked(FbApi *api, FbApiThread *thrd, gpointer data)
+{
+    FbData *fata = data;
+    gchar id[FB_ID_STRMAX];
+    gchar *topic;
+    struct groupchat *gc;
+    struct im_connection *ic;
+
+    FB_ID_TO_STR(thrd->tid, id);
+    ic = fb_data_get_connection(fata);
+    gc = bee_chat_by_title(ic->bee, ic, id);
+
+    if (G_UNLIKELY(gc == NULL)) {
+        return;
+    }
+
+    topic = fb_thread_topic_gen(thrd);
+    imcb_chat_topic(gc, NULL, topic, 0);
+    g_free(topic);
+
+    imcb_chat_log(gc, "You have been removed from this chat");
+
+    fb_data_remove_groupchat(fata, gc);
+    imcb_chat_free(gc);
+}
+
+static void
 fb_cb_api_threads(FbApi *api, GSList *thrds, gpointer data)
 {
     FbApiThread *thrd;
@@ -742,6 +769,10 @@ fb_login(account_t *acc)
     g_signal_connect(api,
                      "thread-create",
                      G_CALLBACK(fb_cb_api_thread_create),
+                     fata);
+    g_signal_connect(api,
+                     "thread-kicked",
+                     G_CALLBACK(fb_cb_api_thread_kicked),
                      fata);
     g_signal_connect(api,
                      "threads",
