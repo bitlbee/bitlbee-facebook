@@ -483,6 +483,32 @@ fb_cb_api_presences(FbApi *api, GSList *press, gpointer data)
     }
 }
 
+static gchar *
+fb_thread_topic_gen(FbApiThread *thrd)
+{
+    GSList *l;
+    GString *gstr;
+    FbApiUser *user;
+
+    if (thrd->topic != NULL) {
+        return g_strdup(thrd->topic);
+    }
+
+    gstr = g_string_new(NULL);
+
+    for (l = thrd->users; l != NULL; l = l->next) {
+        user = l->data;
+
+        if (gstr->len > 0) {
+            g_string_append(gstr, ", ");
+        }
+
+        g_string_append(gstr, user->name);
+    }
+
+    return g_string_free(gstr, FALSE);
+}
+
 static void
 fb_cb_api_thread(FbApi *api, FbApiThread *thrd, gpointer data)
 {
@@ -490,9 +516,9 @@ fb_cb_api_thread(FbApi *api, FbApiThread *thrd, gpointer data)
     FbApiUser *user;
     FbData *fata = data;
     gchar id[FB_ID_STRMAX];
+    gchar *topic;
     GList *h;
     GSList *l;
-    GString *gstr;
     struct groupchat *gc;
     struct im_connection *ic;
 
@@ -504,24 +530,9 @@ fb_cb_api_thread(FbApi *api, FbApiThread *thrd, gpointer data)
         return;
     }
 
-    if (thrd->topic == NULL) {
-        gstr = g_string_new(NULL);
-
-        for (l = thrd->users; l != NULL; l = l->next) {
-            user = l->data;
-
-            if (gstr->len > 0) {
-                g_string_append(gstr, ", ");
-            }
-
-            g_string_append(gstr, user->name);
-        }
-
-        imcb_chat_topic(gc, NULL, gstr->str, 0);
-        g_string_free(gstr, TRUE);
-    } else {
-        imcb_chat_topic(gc, NULL, (gchar *) thrd->topic, 0);
-    }
+    topic = fb_thread_topic_gen(thrd);
+    imcb_chat_topic(gc, NULL, topic, 0);
+    g_free(topic);
 
     for (l = thrd->users; l != NULL; l = l->next) {
         user = l->data;
