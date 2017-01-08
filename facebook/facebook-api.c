@@ -61,6 +61,7 @@ struct _FbApiPrivate
     gboolean invisible;
     guint unread;
     FbId lastmid;
+    gchar *contacts_delta;
 };
 
 struct _FbApiData
@@ -80,6 +81,9 @@ fb_api_message_send(FbApi *api, FbApiMessage *msg);
 
 static void
 fb_api_sticker(FbApi *api, FbId sid, FbApiMessage *msg);
+
+void
+fb_api_contacts_delta(FbApi *api, const gchar *delta_cursor);
 
 G_DEFINE_TYPE(FbApi, fb_api, G_TYPE_OBJECT);
 
@@ -174,6 +178,7 @@ fb_api_dispose(GObject *obj)
     g_free(priv->did);
     g_free(priv->stoken);
     g_free(priv->token);
+    g_free(priv->contacts_delta);
 }
 
 static void
@@ -334,6 +339,23 @@ fb_api_class_init(FbApiClass *klass)
                  fb_marshal_VOID__POINTER_BOOLEAN,
                  G_TYPE_NONE,
                  2, G_TYPE_POINTER, G_TYPE_BOOLEAN);
+
+    /**
+     * FbApi::contacts-delta:
+     * @api: The #FbApi.
+     * @added: The #GSList of added #FbApiUser's.
+     * @removed: The #GSList of strings with removed user ids.
+     *
+     * Like 'contacts', but only the deltas.
+     */
+    g_signal_new("contacts-delta",
+                 G_TYPE_FROM_CLASS(klass),
+                 G_SIGNAL_ACTION,
+                 0,
+                 NULL, NULL,
+                 fb_marshal_VOID__POINTER_POINTER,
+                 G_TYPE_NONE,
+                 2, G_TYPE_POINTER, G_TYPE_POINTER);
 
     /**
      * FbApi::error:
@@ -2023,8 +2045,10 @@ fb_api_cb_contacts_nodes(FbApi *api, JsonNode *root, GSList *users)
                        "$.structured_name.text");
     fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
                        "$.hugePictureUrl.uri");
-    fb_json_values_set_array(values, FALSE, "$.viewer.messenger_contacts"
-                                             ".nodes");
+
+    if (JSON_NODE_TYPE(root) == JSON_NODE_ARRAY) {
+        fb_json_values_set_array(values, FALSE, "$");
+    }
 
     while (fb_json_values_update(values, &err)) {
         str = fb_json_values_next_str(values, "0");
@@ -2045,9 +2069,37 @@ fb_api_cb_contacts_nodes(FbApi *api, JsonNode *root, GSList *users)
         user->csum = fb_api_user_icon_checksum(user->icon);
 
         users = g_slist_prepend(users, user);
+
+        if (JSON_NODE_TYPE(root) != JSON_NODE_ARRAY) {
+            break;
+        }
     }
 
     g_object_unref(values);
+
+    return users;
+}
+
+/* base64(contact:<our id>:<their id>:<whatever>) */
+static GSList *
+fb_api_cb_contacts_parse_removed(FbApi *api, JsonNode *node, GSList *users)
+{
+    gsize len;
+    char **split;
+    guchar *decoded = g_base64_decode(json_node_get_string(node), &len);
+
+    g_return_val_if_fail(decoded[len] == '\0', users);
+    g_return_val_if_fail(len == strlen(decoded), users);
+    g_return_val_if_fail(g_str_has_prefix(decoded, "contact:"), users);
+
+    split = g_strsplit_set(decoded, ":", 4);
+
+    g_return_val_if_fail(g_strv_length(split) == 4, users);
+
+    users = g_slist_prepend(users, g_strdup(split[2]));
+
+    g_strfreev(split);
+    g_free(decoded);
 
     return users;
 }
@@ -2056,6 +2108,7 @@ static void
 fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
 {
     const gchar *cursor;
+    const gchar *delta_cursor;
     const gchar *str;
     FbApi *api = data;
     FbApiPrivate *priv = api->priv;
@@ -2063,26 +2116,79 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
     FbId uid;
     FbJsonValues *values;
     gboolean complete;
+    gboolean is_delta;
     GError *err = NULL;
+    GList *l;
     GSList *users = NULL;
     JsonNode *root;
+    JsonNode *croot;
+    JsonNode *node;
 
     if (!fb_api_http_chk(api, req, &root)) {
         return;
     }
 
-    users = fb_api_cb_contacts_nodes(api, root, users);
+    croot = fb_json_node_get(root, "$.viewer.messenger_contacts.deltas", NULL);
+    is_delta = (croot != NULL);
 
-    values = fb_json_values_new(root);
+    if (!is_delta) {
+        croot = fb_json_node_get(root, "$.viewer.messenger_contacts", NULL);
+        node = fb_json_node_get(croot, "$.nodes", NULL);
+        users = fb_api_cb_contacts_nodes(api, node, users);
+        json_node_free(node);
+
+    } else {
+        GSList *added = NULL;
+        GSList *removed = NULL;
+        JsonArray *arr = fb_json_node_get_arr(croot, "$.nodes", NULL);
+        GList *elms = json_array_get_elements(arr);
+
+        for (l = elms; l != NULL; l = l->next) {
+            if (node = fb_json_node_get(l->data, "$.added", NULL)) {
+                added = fb_api_cb_contacts_nodes(api, node, added);
+                json_node_free(node);
+            }
+
+            if (node = fb_json_node_get(l->data, "$.removed", NULL)) {
+                removed = fb_api_cb_contacts_parse_removed(api, node, removed);
+                json_node_free(node);
+            }
+        }
+
+        g_signal_emit_by_name(api, "contacts-delta", added, removed);
+
+        g_slist_free_full(added, (GDestroyNotify) fb_api_user_free);
+        g_slist_free_full(removed, (GDestroyNotify) g_free);
+
+        g_list_free(elms);
+        json_array_unref(arr);
+    }
+
+    values = fb_json_values_new(croot);
+    fb_json_values_add(values, FB_JSON_TYPE_BOOL, FALSE,
+                       "$.page_info.has_next_page");
     fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
-                       "$.viewer.messenger_contacts.page_info.end_cursor");
+                       "$.page_info.delta_cursor");
+    fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
+                       "$.page_info.end_cursor");
     fb_json_values_update(values, NULL);
+
+    complete = !fb_json_values_next_bool(values, FALSE);
+
+    delta_cursor = fb_json_values_next_str(values, NULL);
 
     cursor = fb_json_values_next_str(values, NULL);
 
     if (G_UNLIKELY(err == NULL)) {
-        complete = (cursor == NULL);
-        g_signal_emit_by_name(api, "contacts", users, complete);
+
+        if (is_delta || complete) {
+            g_free(priv->contacts_delta);
+            priv->contacts_delta = g_strdup(is_delta ? cursor : delta_cursor);
+        }
+
+        if (users) {
+            g_signal_emit_by_name(api, "contacts", users, complete);
+        }
 
         if (!complete) {
             fb_api_contacts_after(api, cursor);
@@ -2093,13 +2199,24 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
 
     g_slist_free_full(users, (GDestroyNotify) fb_api_user_free);
     g_object_unref(values);
+
+    json_node_free(croot);
     json_node_free(root);
 }
 
 void
 fb_api_contacts(FbApi *api)
 {
+    FbApiPrivate *priv;
     JsonBuilder *bldr;
+
+    g_return_if_fail(FB_IS_API(api));
+    priv = api->priv;
+
+    if (priv->contacts_delta) {
+        fb_api_contacts_delta(api, priv->contacts_delta);
+        return;
+    }
 
     bldr = fb_json_bldr_new(JSON_NODE_OBJECT);
     fb_json_bldr_arr_begin(bldr, "0");
@@ -2124,6 +2241,24 @@ fb_api_contacts_after(FbApi *api, const gchar *cursor)
     fb_json_bldr_add_str(bldr, "1", cursor);
     fb_json_bldr_add_str(bldr, "2", G_STRINGIFY(FB_API_CONTACTS_COUNT));
     fb_api_http_query(api, FB_API_QUERY_CONTACTS_AFTER, bldr,
+                      fb_api_cb_contacts);
+}
+
+void
+fb_api_contacts_delta(FbApi *api, const gchar *delta_cursor)
+{
+    JsonBuilder *bldr;
+
+    bldr = fb_json_bldr_new(JSON_NODE_OBJECT);
+
+    fb_json_bldr_add_str(bldr, "0", delta_cursor);
+
+    fb_json_bldr_arr_begin(bldr, "1");
+    fb_json_bldr_add_str(bldr, NULL, "user");
+    fb_json_bldr_arr_end(bldr);
+
+    fb_json_bldr_add_str(bldr, "2", G_STRINGIFY(FB_API_CONTACTS_COUNT));
+    fb_api_http_query(api, FB_API_QUERY_CONTACTS_DELTA, bldr,
                       fb_api_cb_contacts);
 }
 

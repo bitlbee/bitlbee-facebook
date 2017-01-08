@@ -207,9 +207,9 @@ fb_sync_contacts_add_timeout(FbData *fata)
 
     sync = set_getint(&acct->set, "sync_interval");
 
-    if (sync < 5) {
-        set_setint(&acct->set, "sync_interval", 5);
-        sync = 5;
+    if (sync < 1) {
+        set_setint(&acct->set, "sync_interval", 1);
+        sync = 1;
     }
 
     sync *= 60 * 1000;
@@ -220,7 +220,6 @@ fb_sync_contacts_add_timeout(FbData *fata)
 static void
 fb_cb_api_contacts(FbApi *api, GSList *users, gboolean complete, gpointer data)
 {
-    bee_user_t *bu;
     FbApiUser *user;
     FbData *fata = data;
     FbId muid;
@@ -247,35 +246,47 @@ fb_cb_api_contacts(FbApi *api, GSList *users, gboolean complete, gpointer data)
         imcb_add_buddy(ic, uid, NULL);
         imcb_buddy_nick_hint(ic, uid, user->name);
         imcb_rename_buddy(ic, uid, user->name);
-
-        bu = imcb_buddy_by_handle(ic, uid);
-        FB_UTIL_PTRBIT_SET(bu->data, FB_PTRBIT_NEW_BUDDY, TRUE);
     }
 
     if (!complete) {
         return;
     }
 
-    l = ic->bee->users;
-
-    while (l != NULL) {
-        bu = l->data;
-        l = l->next;
-
-        if (bu->ic != ic) {
-            continue;
-        }
-
-        if (FB_UTIL_PTRBIT_GET(bu->data, FB_PTRBIT_NEW_BUDDY)) {
-            FB_UTIL_PTRBIT_SET(bu->data, FB_PTRBIT_NEW_BUDDY, FALSE);
-        } else {
-            imcb_remove_buddy(ic, bu->handle, NULL);
-        }
-    }
-
     if (!(ic->flags & OPT_LOGGED_IN)) {
         imcb_log(ic, "Connecting");
         fb_api_connect(api, FALSE);
+    }
+
+    fb_sync_contacts_add_timeout(fata);
+}
+
+static void
+fb_cb_api_contacts_delta(FbApi *api, GSList *added, GSList *removed, gpointer data)
+{
+    bee_user_t *bu;
+    FbApiUser *user;
+    FbData *fata = data;
+    gchar uid[FB_ID_STRMAX];
+    GSList *l;
+    struct im_connection *ic;
+
+    ic = fb_data_get_connection(fata);
+
+    for (l = added; l != NULL; l = l->next) {
+        user = l->data;
+        FB_ID_TO_STR(user->uid, uid);
+
+        imcb_add_buddy(ic, uid, NULL);
+        imcb_buddy_nick_hint(ic, uid, user->name);
+        imcb_rename_buddy(ic, uid, user->name);
+    }
+
+    for (l = removed; l != NULL; l = l->next) {
+        bu = imcb_buddy_by_handle(ic, l->data);
+
+        if (bu) {
+            imcb_remove_buddy(ic, bu->handle, NULL);
+        }
     }
 
     fb_sync_contacts_add_timeout(fata);
@@ -722,7 +733,7 @@ fb_init(account_t *acct)
     set_add(&acct->set, "mark_read", "false", fb_eval_mark_read, acct);
     set_add(&acct->set, "mark_read_reply", "false", set_eval_bool, acct);
     set_add(&acct->set, "show_unread", "false", set_eval_bool, acct);
-    set_add(&acct->set, "sync_interval", "30", set_eval_int, acct);
+    set_add(&acct->set, "sync_interval", "5", set_eval_int, acct);
 }
 
 static void
@@ -752,6 +763,10 @@ fb_login(account_t *acc)
     g_signal_connect(api,
                      "contacts",
                      G_CALLBACK(fb_cb_api_contacts),
+                     fata);
+    g_signal_connect(api,
+                     "contacts-delta",
+                     G_CALLBACK(fb_cb_api_contacts_delta),
                      fata);
     g_signal_connect(api,
                      "error",
