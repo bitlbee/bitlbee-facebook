@@ -2034,6 +2034,7 @@ fb_api_cb_contacts_nodes(FbApi *api, JsonNode *root, GSList *users)
     FbApiUser *user;
     FbId uid;
     FbJsonValues *values;
+    gboolean is_array;
     GError *err = NULL;
 
     values = fb_json_values_new(root);
@@ -2046,7 +2047,9 @@ fb_api_cb_contacts_nodes(FbApi *api, JsonNode *root, GSList *users)
     fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
                        "$.hugePictureUrl.uri");
 
-    if (JSON_NODE_TYPE(root) == JSON_NODE_ARRAY) {
+    is_array = (JSON_NODE_TYPE(root) == JSON_NODE_ARRAY);
+
+    if (is_array) {
         fb_json_values_set_array(values, FALSE, "$");
     }
 
@@ -2058,6 +2061,9 @@ fb_api_cb_contacts_nodes(FbApi *api, JsonNode *root, GSList *users)
         if (((g_strcmp0(str, "ARE_FRIENDS") != 0) &&
              (uid != priv->uid)) || (uid == 0))
         {
+            if (!is_array) {
+                break;
+            }
             continue;
         }
 
@@ -2070,7 +2076,7 @@ fb_api_cb_contacts_nodes(FbApi *api, JsonNode *root, GSList *users)
 
         users = g_slist_prepend(users, user);
 
-        if (JSON_NODE_TYPE(root) != JSON_NODE_ARRAY) {
+        if (!is_array) {
             break;
         }
     }
