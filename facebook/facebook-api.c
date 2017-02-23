@@ -1353,7 +1353,11 @@ fb_api_xma_parse(FbApi *api, const gchar *body, JsonNode *root, GError **error)
     if (g_strcmp0(str, "ExternalUrl") == 0) {
         prms = fb_http_values_new();
         fb_http_values_parse(prms, url, TRUE);
-        text = fb_http_values_dup_str(prms, "u", NULL);
+        if (g_str_has_prefix(url, FB_API_FBRPC_PREFIX)) {
+            text = fb_http_values_dup_str(prms, "target_url", NULL);
+        } else {
+            text = fb_http_values_dup_str(prms, "u", NULL);
+        }
         fb_http_values_free(prms);
     } else {
         text = g_strdup(url);
