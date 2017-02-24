@@ -353,15 +353,21 @@ fb_cb_api_events(FbApi *api, GSList *events, gpointer data)
 
         case FB_API_EVENT_TYPE_THREAD_USER_ADDED:
             if (bee_user_by_handle(ic->bee, ic, uid) == NULL) {
-                g_hash_table_insert(fetch, &event->tid, event);
-                break;
+                if (event->text) {
+                    bee_user_new(ic->bee, ic, uid, BEE_USER_LOCAL);
+                    imcb_buddy_nick_hint(ic, uid, event->text);
+                    imcb_rename_buddy(ic, uid, event->text);
+                } else {
+                    g_hash_table_insert(fetch, &event->tid, event);
+                    break;
+                }
             }
 
             imcb_chat_add_buddy(gc, uid);
             break;
 
         case FB_API_EVENT_TYPE_THREAD_USER_REMOVED:
-            imcb_chat_remove_buddy(gc, uid, NULL);
+            imcb_chat_remove_buddy(gc, uid, event->text);
             break;
         }
     }
