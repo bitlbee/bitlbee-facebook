@@ -2092,7 +2092,7 @@ fb_api_cb_contacts_parse_removed(FbApi *api, JsonNode *node, GSList *users)
 {
     gsize len;
     char **split;
-    guchar *decoded = g_base64_decode(json_node_get_string(node), &len);
+    char *decoded = (char *) g_base64_decode(json_node_get_string(node), &len);
 
     g_return_val_if_fail(decoded[len] == '\0', users);
     g_return_val_if_fail(len == strlen(decoded), users);
@@ -2115,11 +2115,8 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
 {
     const gchar *cursor;
     const gchar *delta_cursor;
-    const gchar *str;
     FbApi *api = data;
     FbApiPrivate *priv = api->priv;
-    FbApiUser *user;
-    FbId uid;
     FbJsonValues *values;
     gboolean complete;
     gboolean is_delta;
@@ -2150,12 +2147,12 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
         GList *elms = json_array_get_elements(arr);
 
         for (l = elms; l != NULL; l = l->next) {
-            if (node = fb_json_node_get(l->data, "$.added", NULL)) {
+            if ((node = fb_json_node_get(l->data, "$.added", NULL))) {
                 added = fb_api_cb_contacts_nodes(api, node, added);
                 json_node_free(node);
             }
 
-            if (node = fb_json_node_get(l->data, "$.removed", NULL)) {
+            if ((node = fb_json_node_get(l->data, "$.removed", NULL))) {
                 removed = fb_api_cb_contacts_parse_removed(api, node, removed);
                 json_node_free(node);
             }
