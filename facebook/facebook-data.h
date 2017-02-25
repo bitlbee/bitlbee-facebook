@@ -158,6 +158,18 @@ void
 fb_data_clear_threads(FbData *fata);
 
 /**
+ * fb_data_get_gc:
+ * @fata: The #FbData.
+ * @chan: The channel for groupchat.
+ *
+ * Gets the #groupchat connected to a particulr channel.
+ *
+ * Returns: The #FbId at @index.
+ */
+struct groupchat *
+fb_data_get_gc(FbData *fata, gchar* chan);
+
+/**
  * fb_data_get_thread:
  * @fata: The #FbData.
  * @index: The thread index.

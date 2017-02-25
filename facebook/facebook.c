@@ -1251,31 +1251,44 @@ fb_cmd_fbleave(irc_t *irc, char **args)
 
     i = g_ascii_strtoll(args[oset], NULL, 10);
     tid = fb_data_get_thread(fata, i - 1);
+    gc = fb_data_get_gc(fata, args[oset]);
 
-    if ((i < 1) || (tid == 0)) {
-        irc_rootmsg(irc, "Invalid index: %s. Will try to treat it as thread id...", args[oset]);
-        tid = g_ascii_strtoll(args[oset], NULL, 10);
-    }
-
-    FB_ID_TO_STR(tid, stid);
-    gc = bee_chat_by_title(ic->bee, ic, stid);
     if ( gc != NULL) {
-        ich = gc->ui_data;
-        command[1] = ich->name;
-	irc_exec(irc, command);
-        command[0] = "channel";
-        command[2] = "del";
-	root_command(irc, command);
-        api = fb_data_get_api(fata);
-        fb_api_thread_remove(api, tid, 0);
-        irc_rootmsg(irc, "Left thread id %s.", stid);
-        command[0] = acct->tag;
-        command[1] = NULL;
-        command[2] = NULL;
-        fb_cmd_fbchats(irc, command);
+        irc_rootmsg(irc, "Leaving group associated with channel %s.", args[oset]);
+        tid = FB_ID_FROM_STR(gc->title);
+    } else if ((i > 0) && (tid)) {
+        FB_ID_TO_STR(tid, stid);
+        gc = bee_chat_by_title(ic->bee, ic, stid);
+        if (G_UNLIKELY(gc == NULL)) {
+            irc_rootmsg(irc, "Group at index %s with thread id %s not found.", args[oset], stid);
+            return;
+        }
+        irc_rootmsg(irc, "Leaving group with thread id %s.", stid);
     } else {
-        irc_rootmsg(irc, "Invalid thread id: %s.", stid);
+        gc = bee_chat_by_title(ic->bee, ic, args[oset]);
+        if (G_UNLIKELY(gc == NULL)) {
+            irc_rootmsg(irc, "Parameter: %s is not a valid channel, index or thread id.", args[oset]);
+            return;
+        }
+        tid = FB_ID_FROM_STR(args[oset]);
+        irc_rootmsg(irc, "Leaving group with thread id %s.", args[oset]);
     }
+    ich = gc->ui_data;
+
+    command[1] = ich->name;
+    irc_exec(irc, command);
+
+    command[0] = "channel";
+    command[2] = "del";
+    root_command(irc, command);
+
+    api = fb_data_get_api(fata);
+    fb_api_thread_remove(api, tid, 0);
+
+    command[0] = acct->tag;
+    command[1] = NULL;
+    command[2] = NULL;
+    fb_cmd_fbchats(irc, command);
 }
 
 G_MODULE_EXPORT void
