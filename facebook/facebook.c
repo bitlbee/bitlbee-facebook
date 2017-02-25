@@ -789,7 +789,7 @@ fb_login(account_t *acc)
     FbApi *api;
     FbData *fata;
     struct im_connection *ic;
-    char *command[];
+    char *command[] = {acc->tag, NULL};
 
     fata = fb_data_new(acc);
     api = fb_data_get_api(fata);
@@ -862,7 +862,6 @@ fb_login(account_t *acc)
     imcb_log(ic, "Fetching contacts");
     fb_api_contacts(api);
     imcb_log(ic, "Fetching group chats");
-    command[] = {acc->tag, NULL};
     fb_cmd_fbchats(acc->bee->ui_data, command);
 }
 
@@ -1238,7 +1237,8 @@ fb_cmd_fbleave(irc_t *irc, char **args)
     irc_channel_t *ich;
     struct groupchat *gc;
     struct im_connection *ic;
-    char *command[];
+    char *command[] = {"part", NULL, NULL};
+
 
     acct = fb_cmd_account(irc, args, 1, &oset);
 
@@ -1261,7 +1261,6 @@ fb_cmd_fbleave(irc_t *irc, char **args)
     gc = bee_chat_by_title(ic->bee, ic, stid);
     if ( gc != NULL) {
         ich = gc->ui_data;
-        command[] = {"part", NULL, NULL};
         command[1] = ich->name;
 	irc_exec(irc, command);
         command[0] = "channel";
