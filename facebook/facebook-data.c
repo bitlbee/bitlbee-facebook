@@ -279,7 +279,6 @@ fb_data_get_gc(FbData *fata, gchar* chan)
 {
     FbDataPrivate *priv;
     struct groupchat *gc;
-    irc_channel_t *ich;
 
     g_return_val_if_fail(FB_IS_DATA(fata), 0);
     priv = fata->priv;
