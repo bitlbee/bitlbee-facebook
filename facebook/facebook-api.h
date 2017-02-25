@@ -79,14 +79,14 @@
  *
  * The Facebook API key.
  */
-#define FB_API_KEY  "256002347743983"
+#define FB_API_KEY  "312713275593566"
 
 /**
  * FB_API_SECRET:
  *
  * The Facebook API secret.
  */
-#define FB_API_SECRET  "374e60f8b9bb6b8cbb30f78030438895"
+#define FB_API_SECRET  "d2901dc6cb685df3b074b30b56b78d28"
 
 /**
  * FB_ORCA_AGENT

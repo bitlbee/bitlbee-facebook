@@ -2118,7 +2118,7 @@ fb_api_cb_auth(FbHttpRequest *req, gpointer data)
 
     values = fb_json_values_new(root);
     fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE, "$.access_token");
-    fb_json_values_add(values, FB_JSON_TYPE_INT, TRUE, "$.uid");
+    fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE, "$.uid");
     fb_json_values_update(values, &err);
 
     FB_API_ERROR_EMIT(api, err,
@@ -2129,7 +2129,7 @@ fb_api_cb_auth(FbHttpRequest *req, gpointer data)
 
     g_free(priv->token);
     priv->token = fb_json_values_next_str_dup(values, NULL);
-    priv->uid = fb_json_values_next_int(values, 0);
+    priv->uid = FB_ID_FROM_STR(fb_json_values_next_str(values, "0"));
 
     g_signal_emit_by_name(api, "auth");
     g_object_unref(values);
@@ -2144,6 +2144,8 @@ fb_api_auth(FbApi *api, const gchar *user, const gchar *pass)
     prms = fb_http_values_new();
     fb_http_values_set_str(prms, "email", user);
     fb_http_values_set_str(prms, "password", pass);
+    fb_http_values_set_str(prms, "credentials_type", "work_account_password");
+
     fb_api_http_req(api, FB_API_URL_AUTH, "authenticate", "auth.login", prms,
                     fb_api_cb_auth);
 }
@@ -2252,6 +2254,8 @@ fb_api_cb_contacts_nodes(FbApi *api, JsonNode *root, GSList *users)
                        "$.represented_profile.id");
     fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
                        "$.represented_profile.friendship_status");
+    fb_json_values_add(values, FB_JSON_TYPE_BOOL, FALSE,
+                       "$.is_on_viewer_contact_list");
     fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
                        "$.structured_name.text");
     fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
@@ -2264,11 +2268,14 @@ fb_api_cb_contacts_nodes(FbApi *api, JsonNode *root, GSList *users)
     }
 
     while (fb_json_values_update(values, &err)) {
+        gboolean in_contact_list;
+
         str = fb_json_values_next_str(values, "0");
         uid = FB_ID_FROM_STR(str);
         str = fb_json_values_next_str(values, NULL);
+        in_contact_list = fb_json_values_next_bool(values, FALSE);
 
-        if (((g_strcmp0(str, "ARE_FRIENDS") != 0) &&
+        if ((!in_contact_list && (g_strcmp0(str, "ARE_FRIENDS") != 0) &&
              (uid != priv->uid)) || (uid == 0))
         {
             if (!is_array) {
