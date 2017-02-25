@@ -370,9 +370,9 @@ fb_api_class_init(FbApiClass *klass)
                  G_SIGNAL_ACTION,
                  0,
                  NULL, NULL,
-                 fb_marshal_VOID__OBJECT,
+                 fb_marshal_VOID__POINTER,
                  G_TYPE_NONE,
-                 1, G_TYPE_ERROR);
+                 1, G_TYPE_POINTER);
 
     /**
      * FbApi::events:
