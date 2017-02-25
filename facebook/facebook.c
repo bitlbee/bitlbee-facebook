@@ -1253,7 +1253,7 @@ fb_cmd_fbleave(irc_t *irc, char **args)
     tid = fb_data_get_thread(fata, i - 1);
 
     if ((i < 1) || (tid == 0)) {
-        irc_rootmsg(irc, "Invalid index: %u. Will try to treat it as thread id...", i);
+        irc_rootmsg(irc, "Invalid index: %s. Will try to treat it as thread id...", args[oset]);
         tid = g_ascii_strtoll(args[oset], NULL, 10);
     }
 
@@ -1268,7 +1268,7 @@ fb_cmd_fbleave(irc_t *irc, char **args)
 	root_command(irc, command);
         api = fb_data_get_api(fata);
         fb_api_thread_remove(api, tid, 0);
-        irc_rootmsg(irc, "Left thread id %u.", tid);
+        irc_rootmsg(irc, "Left thread id %s.", stid);
         command[0] = acct->tag;
         command[1] = NULL;
         command[2] = NULL;
