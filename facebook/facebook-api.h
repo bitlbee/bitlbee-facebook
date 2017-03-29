@@ -286,7 +286,17 @@
  *   17: profile_pic_medium_size
  *   18: profile_pic_small_size
  */
-#define FB_API_QUERY_THREADS  10155268192741729
+#define FB_API_QUERY_THREADS  10153919752026729
+
+/**
+ * FB_API_QUERY_SEQ_ID:
+ *
+ * A variant of ThreadListQuery with sequence ID
+ *
+ * TODO: parameters.
+ */
+
+#define FB_API_QUERY_SEQ_ID  10155268192741729
 
 /**
  * FB_API_QUERY_XMA:
