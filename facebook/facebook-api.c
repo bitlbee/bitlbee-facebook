@@ -793,6 +793,7 @@ fb_api_http_query(FbApi *api, gint64 query, JsonBuilder *builder,
     case FB_API_QUERY_THREAD:
         name = "ThreadQuery";
         break;
+    case FB_API_QUERY_SEQ_ID:
     case FB_API_QUERY_THREADS:
         name = "ThreadListQuery";
         break;
