@@ -877,7 +877,7 @@ fb_api_cb_mqtt_open(FbMqtt *mqtt, gpointer data)
 
     /* Write the information string */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_STRING, 2, 1);
-    fb_thrift_write_str(thft, "");
+    fb_thrift_write_str(thft, FB_API_MQTT_AGENT);
 
     /* Write the UNKNOWN ("cp"?) */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_I64, 3, 2);

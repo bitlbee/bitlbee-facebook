@@ -96,6 +96,22 @@
 #define FB_API_AGENT  "Facebook plugin / BitlBee / " PACKAGE_VERSION
 
 /**
+ * FB_API_MQTT_AGENT
+ *
+ * The client information string sent in the MQTT CONNECT message
+ *
+ * We announce ourselves as compatible with Orca-Android 38.0 since that's the
+ * closest version to the last major protocol update. Some parts use older
+ * features, some parts use newer ones.
+ *
+ * Fun fact: this version sends old-style MQIsdp CONNECT messages for the first
+ * connection, with JSON payloads instead of compressed thrift.
+ */
+
+#define FB_API_MQTT_AGENT FB_API_AGENT " [FBAN/Orca-Android;FBAV/38.0.0.22.155;FBBV/14477681]"
+
+
+/**
  * FB_API_URL_ATTACH:
  *
  * The URL for attachment URL requests.
