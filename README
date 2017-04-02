@@ -36,13 +36,10 @@ With a "global" (or system) bitlbee installation:
     $ make
     $ make install
 
-Or with a "local" bitlbee installation (location: $HOME/bitlbee):
+Otherwise, before running those commands, set PKG_CONFIG_PATH to the path to
+the `bitlbee.pc` file. For example:
 
-    $ export BITLBEE_CFLAGS="-I$HOME/bitlbee/include/bitlbee"
-    $ export BITLBEE_LIBS=""
-    $ ./autogen.sh --with-plugindir=$HOME/bitlbee/lib
-    $ make
-    $ make install
+    $ export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig/
 
 ## Debugging
 
