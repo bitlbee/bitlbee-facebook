@@ -1,4 +1,9 @@
-bitlbee-facebook-1.1.0 (2017-01-29):
+bitlbee-facebook-1.1.1 (2017-04-02):
+  - Send orca-formatted user agent for all HTTP requests too. Fixes "Failed to
+  parse thread information" errors when joining channels.
+  - Fix typo in the month of the 1.1.0 release in the next line
+
+bitlbee-facebook-1.1.0 (2017-03-29):
   - Fix connection errors after facebook discontinued support for old versions
   of facebook messenger for android. While most of the protocol implementation
   was already above that version, there was a subtle change that broke fetching
