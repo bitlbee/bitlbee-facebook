@@ -49,7 +49,7 @@ AC_ARG_ENABLE(
         [--enable-warnings],
         [Enable additional compile-time (GCC) warnings]
     )],
-    [WARNINGS="yes"],
+    [WARNINGS="$enableval"],
     [WARNINGS="no"]
 )
 
@@ -73,7 +73,7 @@ AC_ARG_WITH(
         [--with-plugindir],
         [BitlBee plugin directory]
     )],
-    [plugindir="$with_plugindir"]
+    [plugindir="$withval"]
 )
 
 PKG_CHECK_MODULES([BITLBEE], [bitlbee >= 3.4])
