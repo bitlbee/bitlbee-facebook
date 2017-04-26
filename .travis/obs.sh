@@ -18,6 +18,7 @@ sed -ri \
     configure.ac
 sed -ri \
     -e "s/bitlbee-dev \([^\(\)]+\),?\s*//" \
+    -e "s/(bitlbee[^ ]*) \(>= 3.4\)/\1 (>= 3.5)/g" \
     debian/control
 
 cat <<EOF > debian/changelog
