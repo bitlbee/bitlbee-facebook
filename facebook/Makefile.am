@@ -33,7 +33,7 @@ facebook_la_SOURCES = \
 	facebook-util.h
 
 # Build the library as a module
-facebook_la_LDFLAGS += -module -avoid-version
+facebook_la_LDFLAGS += -module -avoid-version -no-undefined
 
 EXTRA_DIST = \
 	marshaller.list
