@@ -117,6 +117,7 @@ fb_data_load(FbData *fata)
     guint i;
     guint64 uint;
     GValue val = G_VALUE_INIT;
+    int num;
 
     g_return_val_if_fail(FB_IS_DATA(fata), FALSE);
     priv = fata->priv;
@@ -158,6 +159,14 @@ fb_data_load(FbData *fata)
         g_value_unset(&val);
     } else {
         ret = FALSE;
+    }
+
+    num = set_getint(&acct->set, "tweak");
+    if (num != 0) {
+        g_value_init(&val, G_TYPE_INT);
+        g_value_set_int(&val, num);
+        g_object_set_property(G_OBJECT(priv->api), "tweak", &val);
+        g_value_unset(&val);
     }
 
     fb_api_rehash(priv->api);

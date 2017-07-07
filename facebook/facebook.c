@@ -735,6 +735,9 @@ fb_init(account_t *acct)
     s = set_add(&acct->set, "uid", NULL, NULL, acct);
     s->flags = SET_NULL_OK | SET_HIDDEN;
 
+    s = set_add(&acct->set, "tweak", NULL, NULL, acct);
+    s->flags = SET_NULL_OK | SET_HIDDEN;
+
     set_add(&acct->set, "group_chat_open", "false", fb_eval_open, acct);
     set_add(&acct->set, "mark_read", "false", fb_eval_mark_read, acct);
     set_add(&acct->set, "mark_read_reply", "false", set_eval_bool, acct);

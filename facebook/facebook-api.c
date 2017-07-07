@@ -38,6 +38,7 @@ enum
     PROP_STOKEN,
     PROP_TOKEN,
     PROP_UID,
+    PROP_TWEAK,
 
     PROP_N
 };
@@ -62,6 +63,7 @@ struct _FbApiPrivate
     guint unread;
     FbId lastmid;
     gchar *contacts_delta;
+    int tweak;
 };
 
 struct _FbApiData
@@ -116,6 +118,9 @@ fb_api_set_property(GObject *obj, guint prop, const GValue *val,
     case PROP_UID:
         priv->uid = g_value_get_int64(val);
         break;
+    case PROP_TWEAK:
+        priv->tweak = g_value_get_int(val);
+        break;
 
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, prop, pspec);
@@ -146,6 +151,9 @@ fb_api_get_property(GObject *obj, guint prop, GValue *val, GParamSpec *pspec)
         break;
     case PROP_UID:
         g_value_set_int64(val, priv->uid);
+        break;
+    case PROP_TWEAK:
+        g_value_set_int(val, priv->tweak);
         break;
 
     default:
@@ -267,6 +275,16 @@ fb_api_class_init(FbApiClass *klass)
         "User ID",
         "User identifier",
         0, G_MAXINT64, 0,
+        G_PARAM_READWRITE);
+
+    /**
+     * FbApi:tweak:
+     */
+    props[PROP_TWEAK] = g_param_spec_int(
+        "tweak",
+        "Tweak",
+        "",
+        0, G_MAXINT, 0,
         G_PARAM_READWRITE);
     g_object_class_install_properties(gklass, PROP_N, props);
 
