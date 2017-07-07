@@ -110,7 +110,8 @@
  *
  * The HTTP User-Agent header.
  */
-#define FB_API_AGENT  "Facebook plugin / BitlBee / " PACKAGE_VERSION " " FB_ORCA_AGENT
+#define FB_API_AGENT_BASE "Facebook plugin / BitlBee / " PACKAGE_VERSION
+#define FB_API_AGENT FB_API_AGENT_BASE " " FB_ORCA_AGENT
 
 /**
  * FB_API_MQTT_AGENT

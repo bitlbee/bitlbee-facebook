@@ -89,6 +89,27 @@ fb_api_contacts_delta(FbApi *api, const gchar *delta_cursor);
 
 G_DEFINE_TYPE(FbApi, fb_api, G_TYPE_OBJECT);
 
+static const gchar *agents[] = {
+    FB_API_AGENT,
+    FB_API_AGENT_BASE " " "[FBAN/Orca-Android;FBAV/64.0.0.5.83;FBPN/com.facebook.orca;FBLC/en_US;FBBV/26040814]",
+    FB_API_AGENT_BASE " " "[FBAN/Orca-Android;FBAV/109.0.0.17.70;FBBV/52182662]",
+    FB_API_AGENT_BASE " " "[FBAN/Orca-Android;FBAV/109.0.0.17.70;FBPN/com.facebook.orca;FBLC/en_US;FBBV/52182662]",
+    NULL,
+};
+
+static const gchar *
+fb_api_get_agent_string(int tweak, gboolean mqtt)
+{
+    gboolean http_only = tweak & 4;
+    gboolean mqtt_only = tweak & 8;
+
+    if (tweak <= 0 || tweak > 15 || (http_only && mqtt) || (mqtt_only && !mqtt)) {
+        return agents[0];
+    }
+
+    return agents[tweak & 3];
+}
+
 static void
 fb_api_set_property(GObject *obj, guint prop, const GValue *val,
                     GParamSpec *pspec)
@@ -120,6 +141,7 @@ fb_api_set_property(GObject *obj, guint prop, const GValue *val,
         break;
     case PROP_TWEAK:
         priv->tweak = g_value_get_int(val);
+        fb_http_set_agent(priv->http, fb_api_get_agent_string(priv->tweak, 0));
         break;
 
     default:
@@ -896,7 +918,9 @@ fb_api_cb_mqtt_open(FbMqtt *mqtt, gpointer data)
 
     /* Write the information string */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_STRING, 2, 1);
-    fb_thrift_write_str(thft, FB_API_MQTT_AGENT);
+    fb_thrift_write_str(thft, (priv->tweak != 0)
+        ? fb_api_get_agent_string(priv->tweak, 1)
+        : FB_API_MQTT_AGENT);
 
     /* Write the UNKNOWN ("cp"?) */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_I64, 3, 2);

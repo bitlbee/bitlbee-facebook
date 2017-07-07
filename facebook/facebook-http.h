@@ -206,6 +206,14 @@ void
 fb_http_cookies_parse_request(FbHttp *http, FbHttpRequest *req);
 
 /**
+ * fb_http_set_agent:
+ * @http: The #FbHttp.
+ * @agent: The new user agent string.
+ */
+void
+fb_http_set_agent(FbHttp *http, const gchar *agent);
+
+/**
  * fb_http_request_new:
  * @http: The #FbHttp.
  * @url: The url.

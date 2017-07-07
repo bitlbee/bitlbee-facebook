@@ -242,6 +242,20 @@ fb_http_cookies_parse_request(FbHttp *http, FbHttpRequest *req)
     g_strfreev(hdrs);
 }
 
+void
+fb_http_set_agent(FbHttp *http, const gchar *agent)
+{
+    FbHttpPrivate *priv;
+
+    g_return_if_fail(FB_IS_HTTP(http));
+    priv = http->priv;
+
+    if (agent != priv->agent && g_strcmp0(agent, priv->agent)) {
+        g_free(priv->agent);
+        priv->agent = g_strdup(agent);
+    }
+}
+
 FbHttpRequest *
 fb_http_request_new(FbHttp *http, const gchar *url, gboolean post,
                     FbHttpFunc func, gpointer data)
