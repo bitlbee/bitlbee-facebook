@@ -140,6 +140,7 @@ fb_cb_api_auth(FbApi *api, gpointer data)
 
     imcb_log(ic, "Fetching contacts");
     fb_data_save(fata);
+    fb_util_debug_info("XXX fb_cb_api_auth -> fb_api_contacts");
     fb_api_contacts(api);
 }
 
@@ -194,6 +195,7 @@ fb_cb_sync_contacts(gpointer data, gint fd, b_input_condition cond)
 
     api = fb_data_get_api(fata);
     fb_data_clear_timeout(fata, "sync-contacts", FALSE);
+    fb_util_debug_info("XXX fb_cb_sync_contacts -> fb_api_contacts");
     fb_api_contacts(api);
     return FALSE;
 }
@@ -814,6 +816,10 @@ fb_login(account_t *acc)
                      G_CALLBACK(fb_cb_api_typing),
                      fata);
 
+    fb_util_debug_info("XXX hello!");
+
+    imcb_log(ic, "Hi!");
+
     if (!fb_data_load(fata)) {
         imcb_log(ic, "Authenticating");
         fb_api_auth(api, acc->user, acc->pass);
@@ -821,6 +827,7 @@ fb_login(account_t *acc)
     }
 
     imcb_log(ic, "Fetching contacts");
+    fb_util_debug_info("XXX fb_login -> fb_api_contacts");
     fb_api_contacts(api);
 }
 

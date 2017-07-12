@@ -2327,18 +2327,25 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
     JsonNode *croot;
     JsonNode *node;
 
+    fb_util_debug_info("XXX fb_api_cb_contacts");
+
     if (!fb_api_http_chk(api, req, &root)) {
         return;
     }
 
+
     croot = fb_json_node_get(root, "$.viewer.messenger_contacts.deltas", NULL);
     is_delta = (croot != NULL);
+
+    fb_util_debug_info("XXX fb_api_cb_contacts is_delta=%d", is_delta);
 
     if (!is_delta) {
         croot = fb_json_node_get(root, "$.viewer.messenger_contacts", NULL);
         node = fb_json_node_get(croot, "$.nodes", NULL);
         users = fb_api_cb_contacts_nodes(api, node, users);
         json_node_free(node);
+
+        fb_util_debug_info("XXX fb_api_cb_contacts not delta users=%d", g_slist_length(users));
 
     } else {
         GSList *added = NULL;
@@ -2357,6 +2364,7 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
                 json_node_free(node);
             }
         }
+        fb_util_debug_info("XXX fb_api_cb_contacts delta added=%d removed=%d", g_slist_length(added), g_slist_length(removed));
 
         g_signal_emit_by_name(api, "contacts-delta", added, removed);
 
@@ -2381,6 +2389,8 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
     delta_cursor = fb_json_values_next_str(values, NULL);
 
     cursor = fb_json_values_next_str(values, NULL);
+
+    fb_util_debug_info("XXX fb_api_cb_contacts complete=%d delta_cursor=%s cursor=%s", complete, delta_cursor, cursor);
 
     if (G_UNLIKELY(err == NULL)) {
 
@@ -2416,6 +2426,8 @@ fb_api_contacts(FbApi *api)
     g_return_if_fail(FB_IS_API(api));
     priv = api->priv;
 
+    fb_util_debug_info("XXX fb_api_contacts, delta=%p", priv->contacts_delta);
+
     if (priv->contacts_delta) {
         fb_api_contacts_delta(api, priv->contacts_delta);
         return;
@@ -2436,6 +2448,8 @@ fb_api_contacts_after(FbApi *api, const gchar *cursor)
 {
     JsonBuilder *bldr;
 
+    fb_util_debug_info("XXX fb_api_contacts_after cursor=%s", cursor);
+
     bldr = fb_json_bldr_new(JSON_NODE_OBJECT);
     fb_json_bldr_arr_begin(bldr, "0");
     fb_json_bldr_add_str(bldr, NULL, "user");
@@ -2451,6 +2465,8 @@ void
 fb_api_contacts_delta(FbApi *api, const gchar *delta_cursor)
 {
     JsonBuilder *bldr;
+
+    fb_util_debug_info("XXX fb_api_contacts_delta cursor=%s", delta_cursor);
 
     bldr = fb_json_bldr_new(JSON_NODE_OBJECT);
 
