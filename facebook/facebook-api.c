@@ -2389,7 +2389,7 @@ fb_api_cb_contacts(FbHttpRequest *req, gpointer data)
             priv->contacts_delta = g_strdup(is_delta ? cursor : delta_cursor);
         }
 
-        if (users) {
+        if (users || (complete && !is_delta)) {
             g_signal_emit_by_name(api, "contacts", users, complete);
         }
 
