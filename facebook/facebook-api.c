@@ -637,8 +637,8 @@ fb_api_json_chk(FbApi *api, gconstpointer data, gssize size, JsonNode **node)
         return FALSE;
     }
 
-    fb_util_debug_info("Parsing JSON: %.*s", (gint) size,
-                       (const gchar *) data);
+    fb_util_debug_info("Parsing JSON: %.*s%s", (gint) MIN(500, size),
+                       (const gchar *) data, (size > 500) ? "[...]" : "");
     root = fb_json_node_new(data, size, &err);
     FB_API_ERROR_EMIT(api, err, return FALSE);
 

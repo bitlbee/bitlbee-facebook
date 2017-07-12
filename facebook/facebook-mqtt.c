@@ -281,6 +281,7 @@ fb_mqtt_timeout_clear(FbMqtt *mqtt)
 {
     FbMqttPrivate *priv = mqtt->priv;
 
+    fb_util_debug_info("XXX fb_mqtt_timeout_clear(%p), %d", mqtt, priv->tev);
     if (priv->tev > 0) {
         b_event_remove(priv->tev);
         priv->tev = 0;
@@ -294,6 +295,7 @@ fb_mqtt_timeout(FbMqtt *mqtt)
 
     fb_mqtt_timeout_clear(mqtt);
     priv->tev = b_timeout_add(FB_MQTT_TIMEOUT_CONN, fb_mqtt_cb_timeout, mqtt);
+    fb_util_debug_info("XXX fb_mqtt_timeout(%p) -> %d", mqtt, priv->tev);
 }
 
 static gboolean
@@ -564,6 +566,8 @@ fb_mqtt_cb_open(gpointer data, gint error, gpointer ssl,
     FbMqttPrivate *priv = mqtt->priv;
     gint fd;
 
+    fb_util_debug_info("XXX fb_mqtt_cb_open(%p, %d, %p, ...)", mqtt, error, ssl);
+
     if ((ssl == NULL) || (error != SSL_OK)) {
         /* Set this to null to avoid freeing it in fb_mqtt_close() */
         priv->ssl = NULL;
@@ -588,6 +592,12 @@ fb_mqtt_open(FbMqtt *mqtt, const gchar *host, gint port)
     priv = mqtt->priv;
 
     fb_mqtt_close(mqtt);
+
+    if (g_getenv("MQTT_HOST") != NULL) {
+        host = g_getenv("MQTT_HOST");
+    }
+
+    fb_util_debug_info("XXX fb_mqtt_open(%p, %s, %d)", mqtt, host, port);
     priv->ssl = ssl_connect((gchar *) host, port, TRUE, fb_mqtt_cb_open, mqtt);
 
     if (priv->ssl == NULL) {

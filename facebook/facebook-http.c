@@ -424,7 +424,12 @@ fb_http_request_debug(FbHttpRequest *req, gboolean response,
         lines = g_strsplit(body, "\n", 0);
 
         for (i = 0; lines[i] != NULL; i++) {
-            fb_util_debug_info("  %s", lines[i]);
+            size_t size = strlen(lines[i]);
+            fb_util_debug_info("  %.*s%s",
+                (gint) MIN(500, size),
+                lines[i],
+                (size > 500) ? "[...]" : ""
+            );
         }
 
         g_strfreev(lines);
