@@ -922,23 +922,26 @@ fb_api_cb_mqtt_open(FbMqtt *mqtt, gpointer data)
         ? fb_api_get_agent_string(priv->tweak, 1)
         : FB_API_MQTT_AGENT);
 
-    /* Write the UNKNOWN ("cp"?) */
+    /* Write the client capabilities */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_I64, 3, 2);
-    fb_thrift_write_i64(thft, 23);
+    fb_thrift_write_i64(thft, FB_CP_ACKNOWLEDGED_DELIVERY |
+                              FB_CP_PROCESSING_LASTACTIVE_PRESENCEINFO |
+                              FB_CP_EXACT_KEEPALIVE |
+                              FB_CP_DELTA_SENT_MESSAGE_ENABLED);
 
-    /* Write the UNKNOWN ("ecp"?) */
+    /* Write the endpoint capabilitites */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_I64, 4, 3);
     fb_thrift_write_i64(thft, 26);
 
-    /* Write the UNKNOWN */
+    /* Write the publish payload format (deflate) */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_I32, 5, 4);
     fb_thrift_write_i32(thft, 1);
 
-    /* Write the UNKNOWN ("no_auto_fg"?) */
+    /* Write the noAutomaticForeground flag */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_BOOL, 6, 5);
     fb_thrift_write_bool(thft, TRUE);
 
-    /* Write the visibility state */
+    /* Write the visibility state (makeUserAvailableInForeground flag) */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_BOOL, 7, 6);
     fb_thrift_write_bool(thft, !priv->invisible);
 
@@ -946,15 +949,15 @@ fb_api_cb_mqtt_open(FbMqtt *mqtt, gpointer data)
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_STRING, 8, 7);
     fb_thrift_write_str(thft, priv->did);
 
-    /* Write the UNKNOWN ("fg"?) */
+    /* Write the isInitiallyForeground flag */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_BOOL, 9, 8);
     fb_thrift_write_bool(thft, TRUE);
 
-    /* Write the UNKNOWN ("nwt"?) */
+    /* Write the network type (WIFI) */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_I32, 10, 9);
     fb_thrift_write_i32(thft, 1);
 
-    /* Write the UNKNOWN ("nwst"?) */
+    /* Write the network subtype (none) */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_I32, 11, 10);
     fb_thrift_write_i32(thft, 0);
 
@@ -962,16 +965,18 @@ fb_api_cb_mqtt_open(FbMqtt *mqtt, gpointer data)
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_I64, 12, 11);
     fb_thrift_write_i64(thft, priv->mid);
 
-    /* Write the UNKNOWN */
+    /* Write the list of topics to subscribe */
     fb_thrift_write_field(thft, FB_THRIFT_TYPE_LIST, 14, 12);
     fb_thrift_write_list(thft, FB_THRIFT_TYPE_I32, 0);
+
+    /* Write the STOP for the struct */
     fb_thrift_write_stop(thft);
 
     /* Write the token */
-    fb_thrift_write_field(thft, FB_THRIFT_TYPE_STRING, 15, 14);
+    fb_thrift_write_field(thft, FB_THRIFT_TYPE_STRING, 5, 4);
     fb_thrift_write_str(thft, priv->token);
 
-    /* Write the STOP for the struct */
+    /* Write the STOP for the message */
     fb_thrift_write_stop(thft);
 
     bytes = fb_thrift_get_bytes(thft);
