@@ -1,5 +1,7 @@
 The Facebook protocol plugin for bitlbee. This plugin uses the Facebook
-Mobile API.
+Messenger MQTT-based protocol.
+
+This project is not affiliated with Facebook, Inc.
 
 ## Usage
 
@@ -27,7 +29,7 @@ Do *not* use the source tree headers unless you know what you are
 doing. This can lead to mismatched header versions, which often times
 will lead to bad things.
 
-    $ git clone https://github.com/jgeboski/bitlbee-facebook.git
+    $ git clone https://github.com/bitlbee/bitlbee-facebook.git
     $ cd bitlbee-facebook
 
 With a "global" (or system) bitlbee installation:
