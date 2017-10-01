@@ -29,8 +29,7 @@ AM_INIT_AUTOMAKE([no-define])
 AC_PROG_CC
 AM_PROG_CC_C_O
 
-AC_DISABLE_STATIC
-AC_PROG_LIBTOOL
+LT_INIT([disable-static])
 
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
 m4_ifdef([AC_PROG_CC_C99],  [AC_PROG_CC_C99])
