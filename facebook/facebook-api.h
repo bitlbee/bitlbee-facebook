@@ -138,6 +138,12 @@
 #define FB_API_URL_AUTH  FB_API_BHOST "/method/auth.login"
 
 /**
+ * FB_API_URL_WORK_PRELOGIN
+ */
+
+#define FB_API_URL_WORK_PRELOGIN  FB_API_GHOST "/at_work/pre_login_info"
+
+/**
  * FB_API_URL_GQL:
  *
  * The URL for GraphQL requests.
@@ -171,6 +177,9 @@
  * The URL for thread topic requests.
  */
 #define FB_API_URL_TOPIC  FB_API_AHOST "/method/messaging.setthreadname"
+
+
+#define FB_API_SSO_URL "https://m.facebook.com/work/sso/mobile?app_id=312713275593566&response_url=fb-workchat-sso%%3A%%2F%%2Fsso&request_id=%s&code_challenge=%s&email=%s"
 
 /**
  * FB_API_QUERY_CONTACT:
@@ -318,6 +327,8 @@
  *   0: xma_id
  */
 #define FB_API_QUERY_XMA  10153919431161729
+
+#define FB_API_WORK_COMMUNITY_PEEK 1295334753880530
 
 /**
  * FB_API_CONTACTS_COUNT:
@@ -641,12 +652,22 @@ fb_api_error_emit(FbApi *api, GError *error);
  * @api: The #FbApi.
  * @user: The Facebook user name, email, or phone number.
  * @pass: The Facebook password.
+ * @credentials_type: Type of work account credentials, or NULL
  *
  * Sends an authentication request to Facebook. This will obtain
  * session information, which is required for all other requests.
  */
 void
-fb_api_auth(FbApi *api, const gchar *user, const gchar *pass);
+fb_api_auth(FbApi *api, const gchar *user, const gchar *pass, const gchar *credentials_type);
+
+void
+fb_api_work_prelogin(FbApi *api, const gchar *user);
+
+gchar *
+fb_api_work_gen_sso_url(FbApi *api, const gchar *user);
+
+void
+fb_api_work_got_nonce(FbApi *api, const gchar *url);
 
 /**
  * fb_api_contact:

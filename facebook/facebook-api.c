@@ -27,6 +27,7 @@
 #include "facebook-util.h"
 
 typedef struct _FbApiData FbApiData;
+typedef struct _FbApiPreloginData FbApiPreloginData;
 
 enum
 {
@@ -64,12 +65,21 @@ struct _FbApiPrivate
     FbId lastmid;
     gchar *contacts_delta;
     int tweak;
+    gchar *sso_verifier;
+    gboolean need_work_switch;
 };
 
 struct _FbApiData
 {
     gpointer data;
     GDestroyNotify func;
+};
+
+struct _FbApiPreloginData
+{
+    FbApi *api;
+    gchar *user;
+    gchar *pass;
 };
 
 static void
@@ -209,6 +219,7 @@ fb_api_dispose(GObject *obj)
     g_free(priv->stoken);
     g_free(priv->token);
     g_free(priv->contacts_delta);
+    g_free(priv->sso_verifier);
 }
 
 static void
@@ -546,6 +557,22 @@ fb_api_class_init(FbApiClass *klass)
                  fb_marshal_VOID__POINTER,
                  G_TYPE_NONE,
                  1, G_TYPE_POINTER);
+
+    /**
+     * FbApi::work-sso-login:
+     * @api: The #FbApi.
+     *
+     * Emitted when user interaction is required to continue SAML SSO login
+     */
+
+    g_signal_new("work-sso-login",
+                 G_TYPE_FROM_CLASS(klass),
+                 G_SIGNAL_ACTION,
+                 0,
+                 NULL, NULL,
+                 fb_marshal_VOID__VOID,
+                 G_TYPE_NONE,
+                 0);
 }
 
 static void
@@ -2131,23 +2158,180 @@ fb_api_cb_auth(FbHttpRequest *req, gpointer data)
     priv->token = fb_json_values_next_str_dup(values, NULL);
     priv->uid = FB_ID_FROM_STR(fb_json_values_next_str(values, "0"));
 
-    g_signal_emit_by_name(api, "auth");
+    if (priv->need_work_switch) {
+        fb_api_auth(api, "X", "X", "personal_to_work_switch");
+        priv->need_work_switch = FALSE;
+    } else {
+        g_signal_emit_by_name(api, "auth");
+    }
+
     g_object_unref(values);
     json_node_free(root);
 }
 
 void
-fb_api_auth(FbApi *api, const gchar *user, const gchar *pass)
+fb_api_auth(FbApi *api, const gchar *user, const gchar *pass, const gchar *credentials_type)
 {
+    FbApiPrivate *priv = api->priv;
     FbHttpValues *prms;
 
     prms = fb_http_values_new();
     fb_http_values_set_str(prms, "email", user);
     fb_http_values_set_str(prms, "password", pass);
-    fb_http_values_set_str(prms, "credentials_type", "work_account_password");
+
+    if (credentials_type) {
+        fb_http_values_set_str(prms, "credentials_type", credentials_type);
+    }
+
+    if (priv->sso_verifier) {
+        fb_http_values_set_str(prms, "code_verifier", priv->sso_verifier);
+    }
 
     fb_api_http_req(api, FB_API_URL_AUTH, "authenticate", "auth.login", prms,
                     fb_api_cb_auth);
+}
+
+static void
+fb_api_cb_work_prelogin(FbHttpRequest *req, gpointer data)
+{
+    FbApiPreloginData *pata = data;
+    FbApi *api = pata->api;
+    FbApiPrivate *priv = api->priv;
+    GError *err = NULL;
+    JsonNode *root;
+    gchar *status;
+    gchar *user = pata->user;
+    gchar *pass = pata->pass;
+
+    g_free(pata);
+
+    if (!fb_api_http_chk(api, req, &root)) {
+        return;
+    }
+
+    status = fb_json_node_get_str(root, "$.status", &err);
+
+    FB_API_ERROR_EMIT(api, err,
+        json_node_free(root);
+        return;
+    );
+
+    if (g_strcmp0(status, "can_login_password") == 0) {
+        fb_api_auth(api, user, pass, "work_account_password");
+
+    } else if (g_strcmp0(status, "can_login_via_linked_account") == 0) {
+        fb_api_auth(api, user, pass, "personal_account_password_with_work_username");
+        priv->need_work_switch = TRUE;
+
+    } else if (g_strcmp0(status, "can_login_sso") == 0) {
+        g_signal_emit_by_name(api, "work-sso-login");
+        priv->need_work_switch = TRUE;
+
+    } else if (g_strcmp0(status, "cannot_login") == 0) {
+        char *reason = fb_json_node_get_str(root, "$.cannot_login_reason", NULL);
+
+        if (g_strcmp0(reason, "non_business_email") == 0) {
+            fb_api_error(api, FB_API_ERROR_AUTH,
+                         "Cannot login with non-business email. "
+                         "Change the 'username' setting or disable 'work'");
+        } else {
+            char *title = fb_json_node_get_str(root, "$.error_title", NULL);
+            char *body = fb_json_node_get_str(root, "$.error_body", NULL);
+
+            fb_api_error(api, FB_API_ERROR_AUTH,
+                         "Work prelogin failed (%s - %s)", title, body);
+
+            g_free(title);
+            g_free(body);
+        }
+
+        g_free(reason);
+
+    } else if (g_strcmp0(status, "can_self_invite") == 0) {
+        fb_api_error(api, FB_API_ERROR_AUTH, "Unknown email. "
+                     "Change the 'username' setting or disable 'work'");
+    }
+
+    g_free(status);
+    json_node_free(root);
+}
+
+void
+fb_api_work_prelogin(FbApi *api, const gchar *user)
+{
+    FbApiPrivate *priv = api->priv;
+    FbHttpRequest *req;
+    FbHttpValues *prms, *hdrs;
+    FbApiPreloginData *pata = g_new0(FbApiPreloginData, 1);
+
+    pata->api = api;
+    pata->user = user;
+    pata->pass = pass;
+
+    req = fb_http_request_new(priv->http, FB_API_URL_WORK_PRELOGIN, TRUE, fb_api_cb_work_prelogin, pata);
+
+    hdrs = fb_http_request_get_headers(req);
+    fb_http_values_set_strf(hdrs, "Authorization", "OAuth null");
+
+    prms = fb_http_request_get_params(req);
+    fb_http_values_set_str(prms, "email", user);
+    fb_http_values_set_str(prms, "access_token", FB_API_KEY "|" FB_API_SECRET);
+
+    fb_http_request_send(req);
+}
+
+gchar *
+fb_api_work_gen_sso_url(FbApi *api, const gchar *user)
+{
+    FbApiPrivate *priv = api->priv;
+    gchar *challenge, *verifier, *req_id, *email;
+    gchar *ret;
+
+    fb_util_gen_sso_verifier(&challenge, &verifier, &req_id);
+
+    email = g_uri_escape_string(user, NULL, FALSE);
+
+    ret = g_strdup_printf(FB_API_SSO_URL, req_id, challenge, email);
+
+    g_free(req_id);
+    g_free(challenge);
+    g_free(email);
+
+    g_free(priv->sso_verifier);
+    priv->sso_verifier = verifier;
+
+    return ret;
+}
+
+void
+fb_api_work_got_nonce(FbApi *api, const gchar *url)
+{
+    gchar **split;
+    gchar *uid = NULL;
+    gchar *nonce = NULL;
+    int i;
+
+    if (!g_str_has_prefix(url, "fb-workchat-sso://sso/?")) {
+        return;
+    }
+
+    split = g_strsplit(strchr(url, '?'), "&", -1);
+
+    for (i = 0; split[i]; i++) {
+        gchar *eq = strchr(split[i], '=');
+
+        if (g_str_has_prefix(split[i], "uid=")) {
+            uid = g_strstrip(eq + 1);
+        } else if (g_str_has_prefix(split[i], "nonce=")) {
+            nonce = g_strstrip(eq + 1);
+        }
+    }
+
+    if (uid && nonce) {
+        fb_api_auth(api, uid, nonce, "work_sso_nonce");
+    }
+
+    g_strfreev(split);
 }
 
 static gchar *
