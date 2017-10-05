@@ -409,7 +409,7 @@ fb_util_gen_sso_verifier(gchar **challenge, gchar **verifier, gchar **req_id)
     *verifier = fb_util_urlsafe_base64_encode(buf, sizeof buf);
 
     gc = g_checksum_new(G_CHECKSUM_SHA256);
-    g_checksum_update(gc, *verifier, -1);
+    g_checksum_update(gc, (guchar *) *verifier, -1);
     g_checksum_get_digest(gc, buf, &digest_len);
     g_checksum_free(gc);
 

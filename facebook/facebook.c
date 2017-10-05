@@ -699,10 +699,11 @@ fb_cb_api_work_sso_login(FbApi *api, gpointer data)
 {
     FbData *fata = data;
     struct im_connection *ic;
+    gchar *url;
 
     ic = fb_data_get_connection(fata);
 
-    gchar *url = fb_api_work_gen_sso_url(api, ic->acc->user);
+    url = fb_api_work_gen_sso_url(api, ic->acc->user);
     imcb_add_buddy(ic, FB_SSO_HANDLE, NULL);
 
     imcb_buddy_msg(ic, FB_SSO_HANDLE, "Open this URL in your browser to authenticate:", 0, 0);
@@ -715,16 +716,7 @@ fb_cb_api_work_sso_login(FbApi *api, gpointer data)
         "Otherwise you might have to right click -> view source in the last page and find it there. Good luck!",
         0, 0);
 
-
-    /*
-    if (*result == FB_API_PRELOGIN_PASSWORD) {
-        fb_api_auth(api, ic->acc->user, ic->acc->pass, "work_account_password");
-
-    } else if (*result == FB_API_PRELOGIN_SSO) {
-    } else if (*result == FB_API_PRELOGIN_LINKED) {
-        imcb_error(ic, "Linked account login not supported");
-        imc_logout(ic, FALSE);
-    }*/
+    g_free(url);
 }
 
 static char *
@@ -857,7 +849,7 @@ fb_login(account_t *acc)
     if (!fb_data_load(fata)) {
         imcb_log(ic, "Authenticating");
         if (set_getbool(&acc->set, "work")) {
-            fb_api_work_prelogin(api, acc->user);
+            fb_api_work_login(api, acc->user, acc->pass);
         } else {
             fb_api_auth(api, acc->user, acc->pass, NULL);
         }

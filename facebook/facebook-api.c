@@ -67,6 +67,7 @@ struct _FbApiPrivate
     int tweak;
     gchar *sso_verifier;
     gboolean need_work_switch;
+    FbId work_community_id;
 };
 
 struct _FbApiData
@@ -2131,6 +2132,49 @@ fb_api_attach(FbApi *api, FbId aid, const gchar *msgid, FbApiMessage *msg)
 }
 
 static void
+fb_api_cb_work_peek(FbHttpRequest *req, gpointer data)
+{
+    FbApi *api = data;
+    FbApiPrivate *priv = api->priv;
+    GError *err = NULL;
+    JsonNode *root;
+    gchar *community = NULL;
+
+    if (!fb_api_http_chk(api, req, &root)) {
+        return;
+    }
+
+    community = fb_json_node_get_str(root,
+        "$.data.viewer.work_users[0].community.login_identifier", &err);
+
+    FB_API_ERROR_EMIT(api, err,
+        g_free(community);
+        json_node_free(root);
+        return;
+    );
+
+    priv->work_community_id = FB_ID_FROM_STR(community);
+
+    fb_api_auth(api, "X", "X", "personal_to_work_switch");
+
+    g_free(community);
+    json_node_free(root);
+}
+
+
+static FbHttpRequest *
+fb_api_work_peek(FbApi *api)
+{
+    FbHttpValues *prms;
+
+    prms = fb_http_values_new();
+    fb_http_values_set_int(prms, "doc_id", FB_API_WORK_COMMUNITY_PEEK);
+
+    return fb_api_http_req(api, FB_API_URL_GQL, "WorkCommunityPeekQuery",
+        "post", prms, fb_api_cb_work_peek);
+}
+
+static void
 fb_api_cb_auth(FbHttpRequest *req, gpointer data)
 {
     FbApi *api = data;
@@ -2159,7 +2203,7 @@ fb_api_cb_auth(FbHttpRequest *req, gpointer data)
     priv->uid = FB_ID_FROM_STR(fb_json_values_next_str(values, "0"));
 
     if (priv->need_work_switch) {
-        fb_api_auth(api, "X", "X", "personal_to_work_switch");
+        fb_api_work_peek(api);
         priv->need_work_switch = FALSE;
     } else {
         g_signal_emit_by_name(api, "auth");
@@ -2185,6 +2229,16 @@ fb_api_auth(FbApi *api, const gchar *user, const gchar *pass, const gchar *crede
 
     if (priv->sso_verifier) {
         fb_http_values_set_str(prms, "code_verifier", priv->sso_verifier);
+        g_free(priv->sso_verifier);
+        priv->sso_verifier = NULL;
+    }
+
+    if (priv->work_community_id) {
+        fb_http_values_set_int(prms, "community_id", priv->work_community_id);
+    }
+
+    if (priv->token) {
+        fb_http_values_set_str(prms, "access_token", priv->token);
     }
 
     fb_api_http_req(api, FB_API_URL_AUTH, "authenticate", "auth.login", prms,
@@ -2225,7 +2279,6 @@ fb_api_cb_work_prelogin(FbHttpRequest *req, gpointer data)
 
     } else if (g_strcmp0(status, "can_login_sso") == 0) {
         g_signal_emit_by_name(api, "work-sso-login");
-        priv->need_work_switch = TRUE;
 
     } else if (g_strcmp0(status, "cannot_login") == 0) {
         char *reason = fb_json_node_get_str(root, "$.cannot_login_reason", NULL);
@@ -2257,7 +2310,7 @@ fb_api_cb_work_prelogin(FbHttpRequest *req, gpointer data)
 }
 
 void
-fb_api_work_prelogin(FbApi *api, const gchar *user)
+fb_api_work_login(FbApi *api, gchar *user, gchar *pass)
 {
     FbApiPrivate *priv = api->priv;
     FbHttpRequest *req;
@@ -2271,7 +2324,7 @@ fb_api_work_prelogin(FbApi *api, const gchar *user)
     req = fb_http_request_new(priv->http, FB_API_URL_WORK_PRELOGIN, TRUE, fb_api_cb_work_prelogin, pata);
 
     hdrs = fb_http_request_get_headers(req);
-    fb_http_values_set_strf(hdrs, "Authorization", "OAuth null");
+    fb_http_values_set_str(hdrs, "Authorization", "OAuth null");
 
     prms = fb_http_request_get_params(req);
     fb_http_values_set_str(prms, "email", user);

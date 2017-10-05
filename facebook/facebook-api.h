@@ -661,7 +661,7 @@ void
 fb_api_auth(FbApi *api, const gchar *user, const gchar *pass, const gchar *credentials_type);
 
 void
-fb_api_work_prelogin(FbApi *api, const gchar *user);
+fb_api_work_login(FbApi *api, gchar *user, gchar *pass);
 
 gchar *
 fb_api_work_gen_sso_url(FbApi *api, const gchar *user);
