@@ -169,6 +169,14 @@ fb_data_load(FbData *fata)
         g_value_unset(&val);
     }
 
+    num = set_getbool(&acct->set, "work");
+    if (num != 0) {
+        g_value_init(&val, G_TYPE_BOOLEAN);
+        g_value_set_boolean(&val, num);
+        g_object_set_property(G_OBJECT(priv->api), "work", &val);
+        g_value_unset(&val);
+    }
+
     fb_api_rehash(priv->api);
     return ret;
 }

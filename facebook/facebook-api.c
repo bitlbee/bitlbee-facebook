@@ -40,6 +40,7 @@ enum
     PROP_TOKEN,
     PROP_UID,
     PROP_TWEAK,
+    PROP_WORK,
 
     PROP_N
 };
@@ -155,6 +156,9 @@ fb_api_set_property(GObject *obj, guint prop, const GValue *val,
         priv->tweak = g_value_get_int(val);
         fb_http_set_agent(priv->http, fb_api_get_agent_string(priv->tweak, 0));
         break;
+    case PROP_WORK:
+        priv->is_work = g_value_get_boolean(val);
+        break;
 
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, prop, pspec);
@@ -188,6 +192,9 @@ fb_api_get_property(GObject *obj, guint prop, GValue *val, GParamSpec *pspec)
         break;
     case PROP_TWEAK:
         g_value_set_int(val, priv->tweak);
+        break;
+    case PROP_WORK:
+        g_value_set_boolean(val, priv->is_work);
         break;
 
     default:
@@ -320,6 +327,16 @@ fb_api_class_init(FbApiClass *klass)
         "Tweak",
         "",
         0, G_MAXINT, 0,
+        G_PARAM_READWRITE);
+
+    /**
+     * FbApi:work:
+     */
+    props[PROP_WORK] = g_param_spec_boolean(
+        "work",
+        "Work",
+        "",
+        FALSE,
         G_PARAM_READWRITE);
     g_object_class_install_properties(gklass, PROP_N, props);
 
