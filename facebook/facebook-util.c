@@ -376,3 +376,46 @@ fb_util_zlib_inflate(const GByteArray *bytes, GError **error)
     g_object_unref(conv);
     return ret;
 }
+
+gchar *
+fb_util_urlsafe_base64_encode(const guchar *data, gsize len)
+{
+    gchar *out = g_base64_encode(data, len);
+    gchar *c;
+
+    for (c = out; *c; c++) {
+        if (*c == '+') {
+            *c = '-';
+        } else if (*c == '/') {
+            *c = '_';
+        } else if (*c == '=') {
+            *c = '\0';
+            break;
+        }
+    }
+
+    return out;
+}
+
+void
+fb_util_gen_sso_verifier(gchar **challenge, gchar **verifier, gchar **req_id)
+{
+    guint8 buf[32];
+    GChecksum *gc;
+    gsize digest_len = sizeof buf;
+
+    random_bytes(buf, sizeof buf);
+
+    *verifier = fb_util_urlsafe_base64_encode(buf, sizeof buf);
+
+    gc = g_checksum_new(G_CHECKSUM_SHA256);
+    g_checksum_update(gc, (guchar *) *verifier, -1);
+    g_checksum_get_digest(gc, buf, &digest_len);
+    g_checksum_free(gc);
+
+    *challenge = fb_util_urlsafe_base64_encode(buf, sizeof buf);
+
+    random_bytes(buf, 3);
+
+    *req_id = fb_util_urlsafe_base64_encode(buf, 3);
+}

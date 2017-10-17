@@ -26,6 +26,8 @@
 #define OPT_SELFMESSAGE 0
 #endif
 
+#define FB_SSO_HANDLE "facebook_sso_auth"
+
 typedef enum {
     FB_PTRBIT_NEW_BUDDY,
     FB_PTRBIT_UNREAD_MSG
@@ -137,6 +139,9 @@ fb_cb_api_auth(FbApi *api, gpointer data)
     struct im_connection *ic;
 
     ic = fb_data_get_connection(fata);
+
+    /* likely a no-op if not authing with SSO */
+    imcb_remove_buddy(ic, FB_SSO_HANDLE, NULL);
 
     imcb_log(ic, "Fetching contacts");
     fb_data_save(fata);
@@ -692,6 +697,31 @@ fb_cb_api_typing(FbApi *api, FbApiTyping *typg, gpointer data)
     imcb_buddy_typing(ic, uid, flags);
 }
 
+static void
+fb_cb_api_work_sso_login(FbApi *api, gpointer data)
+{
+    FbData *fata = data;
+    struct im_connection *ic;
+    gchar *url;
+
+    ic = fb_data_get_connection(fata);
+
+    url = fb_api_work_gen_sso_url(api, ic->acc->user);
+    imcb_add_buddy(ic, FB_SSO_HANDLE, NULL);
+
+    imcb_buddy_msg(ic, FB_SSO_HANDLE, "Open this URL in your browser to authenticate:", 0, 0);
+    imcb_buddy_msg(ic, FB_SSO_HANDLE, url, 0, 0);
+    imcb_buddy_msg(ic, FB_SSO_HANDLE,
+        "Respond to this message with the URL starting with 'fb-workchat-sso://' that it attempts to redirect to.",
+        0, 0);
+    imcb_buddy_msg(ic, FB_SSO_HANDLE,
+        "If your browser says 'Address not understood' (like firefox), copy it from the address bar. "
+        "Otherwise you might have to right click -> view source in the last page and find it there. Good luck!",
+        0, 0);
+
+    g_free(url);
+}
+
 static char *
 fb_eval_open(struct set *set, char *value)
 {
@@ -743,6 +773,7 @@ fb_init(account_t *acct)
     set_add(&acct->set, "mark_read_reply", "false", set_eval_bool, acct);
     set_add(&acct->set, "show_unread", "false", set_eval_bool, acct);
     set_add(&acct->set, "sync_interval", "5", set_eval_int, acct);
+    set_add(&acct->set, "work", "false", set_eval_bool, acct);
 }
 
 static void
@@ -813,10 +844,18 @@ fb_login(account_t *acc)
                      "typing",
                      G_CALLBACK(fb_cb_api_typing),
                      fata);
+    g_signal_connect(api,
+                     "work-sso-login",
+                     G_CALLBACK(fb_cb_api_work_sso_login),
+                     fata);
 
     if (!fb_data_load(fata)) {
         imcb_log(ic, "Authenticating");
-        fb_api_auth(api, acc->user, acc->pass);
+        if (set_getbool(&acc->set, "work")) {
+            fb_api_work_login(api, acc->user, acc->pass);
+        } else {
+            fb_api_auth(api, acc->user, acc->pass, NULL);
+        }
         return;
     }
 
@@ -848,6 +887,12 @@ fb_buddy_msg(struct im_connection *ic, char *to, char *message, int flags)
     FbId uid;
 
     api = fb_data_get_api(fata);
+
+    if (g_strcmp0(to, FB_SSO_HANDLE) == 0 && !(ic->flags & OPT_LOGGED_IN)) {
+        fb_api_work_got_nonce(api, message);
+        return 0;
+    }
+
     uid = FB_ID_FROM_STR(to);
     bu = bee_user_by_handle(ic->bee, ic, to);
 

@@ -89,6 +89,20 @@
 #define FB_API_SECRET  "374e60f8b9bb6b8cbb30f78030438895"
 
 /**
+ * FB_WORK_API_KEY:
+ *
+ * The Facebook workchat app API key.
+ */
+#define FB_WORK_API_KEY  "312713275593566"
+
+/**
+ * FB_WORK_API_SECRET:
+ *
+ * The Facebook workchat app API secret.
+ */
+#define FB_WORK_API_SECRET  "d2901dc6cb685df3b074b30b56b78d28"
+
+/**
  * FB_ORCA_AGENT
  *
  * The part of the user agent that looks like the official client, since the
@@ -138,6 +152,15 @@
 #define FB_API_URL_AUTH  FB_API_BHOST "/method/auth.login"
 
 /**
+ * FB_API_URL_WORK_PRELOGIN
+ *
+ * The URL for workchat pre-login information, indicating what auth method
+ * should be used
+ */
+
+#define FB_API_URL_WORK_PRELOGIN  FB_API_GHOST "/at_work/pre_login_info"
+
+/**
  * FB_API_URL_GQL:
  *
  * The URL for GraphQL requests.
@@ -171,6 +194,14 @@
  * The URL for thread topic requests.
  */
 #define FB_API_URL_TOPIC  FB_API_AHOST "/method/messaging.setthreadname"
+
+/**
+ * FB_API_SSO_URL:
+ *
+ * Template for the URL shown to workchat users when trying to authenticate
+ * with SSO.
+ */
+#define FB_API_SSO_URL "https://m.facebook.com/work/sso/mobile?app_id=312713275593566&response_url=fb-workchat-sso%%3A%%2F%%2Fsso&request_id=%s&code_challenge=%s&email=%s"
 
 /**
  * FB_API_QUERY_CONTACT:
@@ -318,6 +349,16 @@
  *   0: xma_id
  */
 #define FB_API_QUERY_XMA  10153919431161729
+
+/**
+ * FB_API_WORK_COMMUNITY_PEEK:
+ *
+ * The docid with information about the work community of the currently
+ * authenticated user.
+ *
+ * Used when prelogin returns can_login_via_linked_account
+ */
+#define FB_API_WORK_COMMUNITY_PEEK 1295334753880530
 
 /**
  * FB_API_CONTACTS_COUNT:
@@ -674,12 +715,49 @@ fb_api_error_emit(FbApi *api, GError *error);
  * @api: The #FbApi.
  * @user: The Facebook user name, email, or phone number.
  * @pass: The Facebook password.
+ * @credentials_type: Type of work account credentials, or NULL
  *
  * Sends an authentication request to Facebook. This will obtain
  * session information, which is required for all other requests.
  */
 void
-fb_api_auth(FbApi *api, const gchar *user, const gchar *pass);
+fb_api_auth(FbApi *api, const gchar *user, const gchar *pass, const gchar *credentials_type);
+
+/**
+ * fb_api_work_login:
+ * @api: The #FbApi.
+ * @user: The Facebook user name, email, or phone number.
+ * @pass: The Facebook password.
+ *
+ * Starts the workchat login sequence.
+ */
+void
+fb_api_work_login(FbApi *api, gchar *user, gchar *pass);
+
+/**
+ * fb_api_work_gen_sso_url:
+ * @api: The #FbApi.
+ * @user: The Facebook user email.
+ *
+ * Generates the URL to be shown to the user to get the SSO auth token. This
+ * url contains a challenge and the corresponding verifier is saved in the
+ * FbApi instance to be used later.
+ *
+ * Returns: a newly allocated string.
+ */
+gchar *
+fb_api_work_gen_sso_url(FbApi *api, const gchar *user);
+
+/**
+ * fb_api_work_got_nonce:
+ * @api: The #FbApi.
+ * @url: The fb-workchat-sso:// URL as entered by the user
+ *
+ * Parses the fb-workchat-sso:// URL that the user got redirected to and
+ * continues with work_sso_nonce auth
+ */
+void
+fb_api_work_got_nonce(FbApi *api, const gchar *url);
 
 /**
  * fb_api_contact:

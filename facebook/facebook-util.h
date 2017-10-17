@@ -289,4 +289,30 @@ fb_util_zlib_deflate(const GByteArray *bytes, GError **error);
 GByteArray *
 fb_util_zlib_inflate(const GByteArray *bytes, GError **error);
 
+/**
+ * fb_util_urlsafe_base64_encode:
+ * @data: the binary data to encode.
+ * @len: the length of data
+ *
+ * Wrapper around g_base64_encode() which substitutes '-' instead of '+'
+ * and '_' instead of '/' and removes the padding
+ *
+ * Returns: A newly allocated string.
+ */
+
+gchar *
+fb_util_urlsafe_base64_encode(const guchar *data, gsize len);
+
+/**
+ * fb_util_gen_sso_verifier:
+ * @challenge: base64 of sha256 of verifier
+ * @verifier: base64 of random data
+ * @req_id: base64 of random data
+ *
+ * Generates the challenge/response parameters used for the workchat SSO auth.
+ * All parameters are output parameters.
+ */
+void
+fb_util_gen_sso_verifier(gchar **challenge, gchar **verifier, gchar **req_id);
+
 #endif /* _FACEBOOK_UTIL_H_ */
