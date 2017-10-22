@@ -15,18 +15,35 @@ An APT repo for several recent debian/ubuntu versions is available here:
 
 https://jgeboski.github.io/
 
+## Installing at Fedora
+
+    $ dnf install bitlbee-facebook
+
+## Installing at RHEL/CentOS
+
+Follow the general instructions for enabling EPEL before installing it:
+
+http://fedoraproject.org/wiki/EPEL#How_can_I_use_these_extra_packages.3F
+
+    $ yum install bitlbee-facebook
+
 ## Building from source
 
-The folowing packages are required: autoconf, automake, libtool, glib2,
+The following packages are required: autoconf, automake, libtool, glib2,
 json-glib, bitlbee (names may vary across distros)
 
 Example for debian-based systems:
 
     apt install build-essential autoconf automake libtool libglib2.0-dev libjson-glib-dev bitlbee-dev
 
+Example for Fedora-based systems:
+
+    dnf install gcc autoconf automake libtool glib2-devel json-glib-devel bitlbee-devel
+
 Make sure bitlbee and its headers have been installed. If bitlbee came
 from the distribution's repository, it will most likely need the
-development package, like bitlbee-dev in the example above.
+development package, like bitlbee-dev or bitlbee-devel in the example
+above.
 
 If bitlbee was built by hand (or alike via a script), ensure the make
 target `install-dev` is invoked. This target is not called by default,
