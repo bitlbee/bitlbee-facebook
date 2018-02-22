@@ -2818,6 +2818,15 @@ fb_api_message_send(FbApi *api, FbApiMessage *msg)
     g_free(json);
 }
 
+static gboolean
+fb_api_is_message_not_empty(const gchar *text)
+{
+    while (*text && *text == ' ') {
+        text++;
+    }
+    return *text != '\0';
+}
+
 void
 fb_api_message(FbApi *api, FbId id, gboolean thread, const gchar *text)
 {
@@ -2827,6 +2836,7 @@ fb_api_message(FbApi *api, FbId id, gboolean thread, const gchar *text)
 
     g_return_if_fail(FB_IS_API(api));
     g_return_if_fail(text != NULL);
+    g_return_if_fail(fb_api_is_message_not_empty(text));
     priv = api->priv;
 
     msg = fb_api_message_dup(NULL, FALSE);
