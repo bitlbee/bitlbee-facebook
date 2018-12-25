@@ -17,17 +17,20 @@ https://jgeboski.github.io/
 
 ## Building from source
 
+The folowing packages are required: autoconf, automake, libtool, glib2,
+json-glib, bitlbee (names may vary across distros)
+
+Example for debian-based systems:
+
+    apt install build-essential autoconf automake libtool libglib2.0-dev libjson-glib-dev bitlbee-dev
+
 Make sure bitlbee and its headers have been installed. If bitlbee came
 from the distribution's repository, it will most likely need the
-development package, usually bitlbee-dev.
+development package, like bitlbee-dev in the example above.
 
 If bitlbee was built by hand (or alike via a script), ensure the make
 target `install-dev` is invoked. This target is not called by default,
 and will install the headers that are needed.
-
-Do *not* use the source tree headers unless you know what you are
-doing. This can lead to mismatched header versions, which often times
-will lead to bad things.
 
     $ git clone https://github.com/bitlbee/bitlbee-facebook.git
     $ cd bitlbee-facebook

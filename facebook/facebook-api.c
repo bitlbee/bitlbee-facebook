@@ -27,6 +27,7 @@
 #include "facebook-util.h"
 
 typedef struct _FbApiData FbApiData;
+typedef struct _FbApiPreloginData FbApiPreloginData;
 
 enum
 {
@@ -39,6 +40,7 @@ enum
     PROP_TOKEN,
     PROP_UID,
     PROP_TWEAK,
+    PROP_WORK,
 
     PROP_N
 };
@@ -64,12 +66,23 @@ struct _FbApiPrivate
     FbId lastmid;
     gchar *contacts_delta;
     int tweak;
+    gboolean is_work;
+    gboolean need_work_switch;
+    gchar *sso_verifier;
+    FbId work_community_id;
 };
 
 struct _FbApiData
 {
     gpointer data;
     GDestroyNotify func;
+};
+
+struct _FbApiPreloginData
+{
+    FbApi *api;
+    gchar *user;
+    gchar *pass;
 };
 
 static void
@@ -143,6 +156,9 @@ fb_api_set_property(GObject *obj, guint prop, const GValue *val,
         priv->tweak = g_value_get_int(val);
         fb_http_set_agent(priv->http, fb_api_get_agent_string(priv->tweak, 0));
         break;
+    case PROP_WORK:
+        priv->is_work = g_value_get_boolean(val);
+        break;
 
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, prop, pspec);
@@ -177,6 +193,9 @@ fb_api_get_property(GObject *obj, guint prop, GValue *val, GParamSpec *pspec)
     case PROP_TWEAK:
         g_value_set_int(val, priv->tweak);
         break;
+    case PROP_WORK:
+        g_value_set_boolean(val, priv->is_work);
+        break;
 
     default:
         G_OBJECT_WARN_INVALID_PROPERTY_ID (obj, prop, pspec);
@@ -209,6 +228,7 @@ fb_api_dispose(GObject *obj)
     g_free(priv->stoken);
     g_free(priv->token);
     g_free(priv->contacts_delta);
+    g_free(priv->sso_verifier);
 }
 
 static void
@@ -307,6 +327,16 @@ fb_api_class_init(FbApiClass *klass)
         "Tweak",
         "",
         0, G_MAXINT, 0,
+        G_PARAM_READWRITE);
+
+    /**
+     * FbApi:work:
+     */
+    props[PROP_WORK] = g_param_spec_boolean(
+        "work",
+        "Work",
+        "",
+        FALSE,
         G_PARAM_READWRITE);
     g_object_class_install_properties(gklass, PROP_N, props);
 
@@ -546,6 +576,22 @@ fb_api_class_init(FbApiClass *klass)
                  fb_marshal_VOID__POINTER,
                  G_TYPE_NONE,
                  1, G_TYPE_POINTER);
+
+    /**
+     * FbApi::work-sso-login:
+     * @api: The #FbApi.
+     *
+     * Emitted when user interaction is required to continue SAML SSO login
+     */
+
+    g_signal_new("work-sso-login",
+                 G_TYPE_FROM_CLASS(klass),
+                 G_SIGNAL_ACTION,
+                 0,
+                 NULL, NULL,
+                 fb_marshal_VOID__VOID,
+                 G_TYPE_NONE,
+                 0);
 }
 
 static void
@@ -764,7 +810,8 @@ fb_api_http_req(FbApi *api, const gchar *url, const gchar *name,
     GList *l;
     GString *gstr;
 
-    fb_http_values_set_str(values, "api_key", FB_API_KEY);
+    fb_http_values_set_str(values, "api_key",
+        priv->is_work ? FB_WORK_API_KEY : FB_API_KEY);
     fb_http_values_set_str(values, "device_id", priv->did);
     fb_http_values_set_str(values, "fb_api_req_friendly_name", name);
     fb_http_values_set_str(values, "format", "json");
@@ -787,7 +834,7 @@ fb_api_http_req(FbApi *api, const gchar *url, const gchar *name,
         g_string_append_printf(gstr, "%s=%s", key, val);
     }
 
-    g_string_append(gstr, FB_API_SECRET);
+    g_string_append(gstr, priv->is_work ? FB_WORK_API_SECRET : FB_API_SECRET);
     data = g_compute_checksum_for_string(G_CHECKSUM_MD5, gstr->str, gstr->len);
     fb_http_values_set_str(values, "sig", data);
 
@@ -2109,6 +2156,53 @@ fb_api_attach(FbApi *api, FbId aid, const gchar *msgid, FbApiMessage *msg)
 }
 
 static void
+fb_api_cb_work_peek(FbHttpRequest *req, gpointer data)
+{
+    FbApi *api = data;
+    FbApiPrivate *priv = api->priv;
+    GError *err = NULL;
+    JsonNode *root;
+    gchar *community = NULL;
+
+    if (!fb_api_http_chk(api, req, &root)) {
+        return;
+    }
+
+    /* The work_users[0] explicitly only handles the first user.
+     * If more than one user is ever needed, this is what you want to change,
+     * but as far as I know this feature (linked work accounts) is deprecated
+     * and most users can detach their work accounts from their personal
+     * accounts by assigning a password to the work account. */
+    community = fb_json_node_get_str(root,
+        "$.data.viewer.work_users[0].community.login_identifier", &err);
+
+    FB_API_ERROR_EMIT(api, err,
+        g_free(community);
+        json_node_free(root);
+        return;
+    );
+
+    priv->work_community_id = FB_ID_FROM_STR(community);
+
+    fb_api_auth(api, "X", "X", "personal_to_work_switch");
+
+    g_free(community);
+    json_node_free(root);
+}
+
+static FbHttpRequest *
+fb_api_work_peek(FbApi *api)
+{
+    FbHttpValues *prms;
+
+    prms = fb_http_values_new();
+    fb_http_values_set_int(prms, "doc_id", FB_API_WORK_COMMUNITY_PEEK);
+
+    return fb_api_http_req(api, FB_API_URL_GQL, "WorkCommunityPeekQuery",
+        "post", prms, fb_api_cb_work_peek);
+}
+
+static void
 fb_api_cb_auth(FbHttpRequest *req, gpointer data)
 {
     FbApi *api = data;
@@ -2123,7 +2217,14 @@ fb_api_cb_auth(FbHttpRequest *req, gpointer data)
 
     values = fb_json_values_new(root);
     fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE, "$.access_token");
-    fb_json_values_add(values, FB_JSON_TYPE_INT, TRUE, "$.uid");
+
+    /* extremely silly difference */
+    if (priv->is_work) {
+        fb_json_values_add(values, FB_JSON_TYPE_STR, TRUE, "$.uid");
+    } else {
+        fb_json_values_add(values, FB_JSON_TYPE_INT, TRUE, "$.uid");
+    }
+
     fb_json_values_update(values, &err);
 
     FB_API_ERROR_EMIT(api, err,
@@ -2134,23 +2235,200 @@ fb_api_cb_auth(FbHttpRequest *req, gpointer data)
 
     g_free(priv->token);
     priv->token = fb_json_values_next_str_dup(values, NULL);
-    priv->uid = fb_json_values_next_int(values, 0);
 
-    g_signal_emit_by_name(api, "auth");
+    if (priv->is_work) {
+        priv->uid = FB_ID_FROM_STR(fb_json_values_next_str(values, "0"));
+    } else {
+        priv->uid = fb_json_values_next_int(values, 0);
+    }
+
+    if (priv->need_work_switch) {
+        fb_api_work_peek(api);
+        priv->need_work_switch = FALSE;
+    } else {
+        g_signal_emit_by_name(api, "auth");
+    }
+
     g_object_unref(values);
     json_node_free(root);
 }
 
 void
-fb_api_auth(FbApi *api, const gchar *user, const gchar *pass)
+fb_api_auth(FbApi *api, const gchar *user, const gchar *pass, const gchar *credentials_type)
 {
+    FbApiPrivate *priv = api->priv;
     FbHttpValues *prms;
 
     prms = fb_http_values_new();
     fb_http_values_set_str(prms, "email", user);
     fb_http_values_set_str(prms, "password", pass);
+
+    if (credentials_type) {
+        fb_http_values_set_str(prms, "credentials_type", credentials_type);
+    }
+
+    if (priv->sso_verifier) {
+        fb_http_values_set_str(prms, "code_verifier", priv->sso_verifier);
+        g_free(priv->sso_verifier);
+        priv->sso_verifier = NULL;
+    }
+
+    if (priv->work_community_id) {
+        fb_http_values_set_int(prms, "community_id", priv->work_community_id);
+    }
+
+    if (priv->is_work && priv->token) {
+        fb_http_values_set_str(prms, "access_token", priv->token);
+    }
+
     fb_api_http_req(api, FB_API_URL_AUTH, "authenticate", "auth.login", prms,
                     fb_api_cb_auth);
+}
+
+static void
+fb_api_cb_work_prelogin(FbHttpRequest *req, gpointer data)
+{
+    FbApiPreloginData *pata = data;
+    FbApi *api = pata->api;
+    FbApiPrivate *priv = api->priv;
+    GError *err = NULL;
+    JsonNode *root;
+    gchar *status;
+    gchar *user = pata->user;
+    gchar *pass = pata->pass;
+
+    g_free(pata);
+
+    if (!fb_api_http_chk(api, req, &root)) {
+        return;
+    }
+
+    status = fb_json_node_get_str(root, "$.status", &err);
+
+    FB_API_ERROR_EMIT(api, err,
+        json_node_free(root);
+        return;
+    );
+
+    if (g_strcmp0(status, "can_login_password") == 0) {
+        fb_api_auth(api, user, pass, "work_account_password");
+
+    } else if (g_strcmp0(status, "can_login_via_linked_account") == 0) {
+        fb_api_auth(api, user, pass, "personal_account_password_with_work_username");
+        priv->need_work_switch = TRUE;
+
+    } else if (g_strcmp0(status, "can_login_sso") == 0) {
+        g_signal_emit_by_name(api, "work-sso-login");
+
+    } else if (g_strcmp0(status, "cannot_login") == 0) {
+        char *reason = fb_json_node_get_str(root, "$.cannot_login_reason", NULL);
+
+        if (g_strcmp0(reason, "non_business_email") == 0) {
+            fb_api_error(api, FB_API_ERROR_AUTH,
+                         "Cannot login with non-business email. "
+                         "Change the 'username' setting or disable 'work'");
+        } else {
+            char *title = fb_json_node_get_str(root, "$.error_title", NULL);
+            char *body = fb_json_node_get_str(root, "$.error_body", NULL);
+
+            fb_api_error(api, FB_API_ERROR_AUTH,
+                         "Work prelogin failed (%s - %s)", title, body);
+
+            g_free(title);
+            g_free(body);
+        }
+
+        g_free(reason);
+
+    } else if (g_strcmp0(status, "can_self_invite") == 0) {
+        fb_api_error(api, FB_API_ERROR_AUTH, "Unknown email. "
+                     "Change the 'username' setting or disable 'work'");
+    }
+
+    g_free(status);
+    json_node_free(root);
+}
+
+void
+fb_api_work_login(FbApi *api, gchar *user, gchar *pass)
+{
+    FbApiPrivate *priv = api->priv;
+    FbHttpRequest *req;
+    FbHttpValues *prms, *hdrs;
+    FbApiPreloginData *pata = g_new0(FbApiPreloginData, 1);
+
+    pata->api = api;
+    pata->user = user;
+    pata->pass = pass;
+
+    priv->is_work = TRUE;
+
+    req = fb_http_request_new(priv->http, FB_API_URL_WORK_PRELOGIN, TRUE,
+        fb_api_cb_work_prelogin, pata);
+
+    hdrs = fb_http_request_get_headers(req);
+    fb_http_values_set_str(hdrs, "Authorization", "OAuth null");
+
+    prms = fb_http_request_get_params(req);
+    fb_http_values_set_str(prms, "email", user);
+    fb_http_values_set_str(prms, "access_token",
+        FB_WORK_API_KEY "|" FB_WORK_API_SECRET);
+
+    fb_http_request_send(req);
+}
+
+gchar *
+fb_api_work_gen_sso_url(FbApi *api, const gchar *user)
+{
+    FbApiPrivate *priv = api->priv;
+    gchar *challenge, *verifier, *req_id, *email;
+    gchar *ret;
+
+    fb_util_gen_sso_verifier(&challenge, &verifier, &req_id);
+
+    email = g_uri_escape_string(user, NULL, FALSE);
+
+    ret = g_strdup_printf(FB_API_SSO_URL, req_id, challenge, email);
+
+    g_free(req_id);
+    g_free(challenge);
+    g_free(email);
+
+    g_free(priv->sso_verifier);
+    priv->sso_verifier = verifier;
+
+    return ret;
+}
+
+void
+fb_api_work_got_nonce(FbApi *api, const gchar *url)
+{
+    gchar **split;
+    gchar *uid = NULL;
+    gchar *nonce = NULL;
+    int i;
+
+    if (!g_str_has_prefix(url, "fb-workchat-sso://sso/?")) {
+        return;
+    }
+
+    split = g_strsplit(strchr(url, '?'), "&", -1);
+
+    for (i = 0; split[i]; i++) {
+        gchar *eq = strchr(split[i], '=');
+
+        if (g_str_has_prefix(split[i], "uid=")) {
+            uid = g_strstrip(eq + 1);
+        } else if (g_str_has_prefix(split[i], "nonce=")) {
+            nonce = g_strstrip(eq + 1);
+        }
+    }
+
+    if (uid && nonce) {
+        fb_api_auth(api, uid, nonce, "work_sso_nonce");
+    }
+
+    g_strfreev(split);
 }
 
 static gchar *
@@ -2257,6 +2535,8 @@ fb_api_cb_contacts_nodes(FbApi *api, JsonNode *root, GSList *users)
                        "$.represented_profile.id");
     fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
                        "$.represented_profile.friendship_status");
+    fb_json_values_add(values, FB_JSON_TYPE_BOOL, FALSE,
+                       "$.is_on_viewer_contact_list");
     fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
                        "$.structured_name.text");
     fb_json_values_add(values, FB_JSON_TYPE_STR, FALSE,
@@ -2269,11 +2549,14 @@ fb_api_cb_contacts_nodes(FbApi *api, JsonNode *root, GSList *users)
     }
 
     while (fb_json_values_update(values, &err)) {
+        gboolean in_contact_list;
+
         str = fb_json_values_next_str(values, "0");
         uid = FB_ID_FROM_STR(str);
         str = fb_json_values_next_str(values, NULL);
+        in_contact_list = fb_json_values_next_bool(values, FALSE);
 
-        if (((g_strcmp0(str, "ARE_FRIENDS") != 0) &&
+        if ((!in_contact_list && (g_strcmp0(str, "ARE_FRIENDS") != 0) &&
              (uid != priv->uid)) || (uid == 0))
         {
             if (!is_array) {
