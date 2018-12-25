@@ -340,25 +340,32 @@ fb_mqtt_cb_read(gpointer data, gint fd, b_input_condition cond)
         g_byte_array_set_size(priv->rbuf, 0);
 
         res = ssl_read(priv->ssl, (gchar *) &byte, sizeof byte);
-        g_byte_array_append(priv->rbuf, &byte, sizeof byte);
 
-        if (res != sizeof byte) {
+        if (res < 0 && ssl_pending(priv->ssl)) {
+            return TRUE;
+        } else if (res != 1) {
             fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
                           "Failed to read fixed header");
             return FALSE;
         }
 
+        g_byte_array_append(priv->rbuf, &byte, sizeof byte);
+
         mult = 1;
 
         do {
             res = ssl_read(priv->ssl, (gchar *) &byte, sizeof byte);
-            g_byte_array_append(priv->rbuf, &byte, sizeof byte);
 
-            if (res != sizeof byte) {
+            /* TODO: this case isn't handled yet */
+            if (0 && res < 0 && ssl_pending(priv->ssl)) {
+                return TRUE;
+            } else if (res != 1) {
                 fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
                               "Failed to read packet size");
                 return FALSE;
             }
+
+            g_byte_array_append(priv->rbuf, &byte, sizeof byte);
 
             priv->remz += (byte & 127) * mult;
             mult *= 128;
@@ -369,7 +376,9 @@ fb_mqtt_cb_read(gpointer data, gint fd, b_input_condition cond)
         size = MIN(priv->remz, sizeof buf);
         rize = ssl_read(priv->ssl, (gchar *) buf, size);
 
-        if (rize < 1) {
+        if (rize < 0 && ssl_pending(priv->ssl)) {
+            return TRUE;
+        } else if (rize < 1) {
             fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
                           "Failed to read packet data");
             return FALSE;
