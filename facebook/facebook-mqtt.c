@@ -341,7 +341,7 @@ fb_mqtt_cb_read(gpointer data, gint fd, b_input_condition cond)
 
         res = ssl_read(priv->ssl, (gchar *) &byte, sizeof byte);
 
-        if (res < 0 && ssl_pending(priv->ssl)) {
+        if (res < 0 && ssl_sockerr_again(priv->ssl)) {
             return TRUE;
         } else if (res != 1) {
             fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
@@ -357,7 +357,7 @@ fb_mqtt_cb_read(gpointer data, gint fd, b_input_condition cond)
             res = ssl_read(priv->ssl, (gchar *) &byte, sizeof byte);
 
             /* TODO: this case isn't handled yet */
-            if (0 && res < 0 && ssl_pending(priv->ssl)) {
+            if (0 && res < 0 && ssl_sockerr_again(priv->ssl)) {
                 return TRUE;
             } else if (res != 1) {
                 fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
@@ -376,7 +376,7 @@ fb_mqtt_cb_read(gpointer data, gint fd, b_input_condition cond)
         size = MIN(priv->remz, sizeof buf);
         rize = ssl_read(priv->ssl, (gchar *) buf, size);
 
-        if (rize < 0 && ssl_pending(priv->ssl)) {
+        if (rize < 0 && ssl_sockerr_again(priv->ssl)) {
             return TRUE;
         } else if (rize < 1) {
             fb_mqtt_error(mqtt, FB_MQTT_ERROR_GENERAL,
