@@ -9,17 +9,29 @@ General usage instructions are available in the bitlbee wiki:
 
 https://wiki.bitlbee.org/HowtoFacebookMQTT
 
-## Installing from APT repo
+## Installing with packages
+
+### Debian/ubuntu APT repo
 
 An APT repo for several recent debian/ubuntu versions is available here:
 
 https://jgeboski.github.io/
 
-## Installing at Fedora
+This builds git/development versions.
+
+### Debian buster/backports
+
+Debian's official repos have packages for releases of this plugin, with the
+slightly different name "bitlbee-plugin-facebook". Use the APT repo if it's not
+the latest.
+
+    $ apt install bitlbee-plugin-facebook
+
+### Fedora
 
     $ dnf install bitlbee-facebook
 
-## Installing at RHEL/CentOS
+### RHEL/CentOS
 
 Follow the general instructions for enabling EPEL before installing it:
 
