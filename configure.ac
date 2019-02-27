@@ -53,7 +53,7 @@ AC_ARG_ENABLE(
 )
 
 AS_IF(
-    [test "x$WARNINGS" == "xyes"],
+    [test "x$WARNINGS" = "xyes"],
     [CFLAGS="$CFLAGS -Wall -Wextra \
      -Waggregate-return \
      -Wdeclaration-after-statement \
