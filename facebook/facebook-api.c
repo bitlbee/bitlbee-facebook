@@ -1879,7 +1879,7 @@ fb_api_cb_publish_pt(FbThrift *thft, GSList **press, GError **error)
         fb_util_debug_info("Presence: %" FB_ID_FORMAT " (%d)",
                            i64, i32 != 0);
 
-        while (id <= 5) {
+        while (id <= 6) {
             if (fb_thrift_read_isstop(thft)) {
                 break;
             }
