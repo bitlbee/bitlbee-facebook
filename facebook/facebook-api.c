@@ -1876,10 +1876,10 @@ fb_api_cb_publish_pt(FbThrift *thft, GSList **press, GError **error)
         pres->active = i32 != 0;
         *press = g_slist_prepend(*press, pres);
 
-        fb_util_debug_info("Presence: %" FB_ID_FORMAT " (%d)",
-                           i64, i32 != 0);
+        fb_util_debug_info("Presence: %" FB_ID_FORMAT " (%d) id: %d",
+                           i64, i32 != 0, id);
 
-        while (id <= 5) {
+        while (id <= 6) {
             if (fb_thrift_read_isstop(thft)) {
                 break;
             }
@@ -1926,7 +1926,9 @@ fb_api_cb_publish_pt(FbThrift *thft, GSList **press, GError **error)
     }
 
     /* Read the field stop */
-    FB_API_TCHK(fb_thrift_read_stop(thft));
+    if (fb_thrift_read_isstop(thft)) {
+        FB_API_TCHK(fb_thrift_read_stop(thft));
+    }
 }
 
 static void
