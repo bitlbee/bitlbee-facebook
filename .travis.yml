@@ -35,8 +35,8 @@ before_install:
       | sudo tee /etc/apt/sources.list.d/suse.list
   - curl -s "http://download.opensuse.org/repositories/openSUSE:/Tools/xUbuntu_$(lsb_release -rs)/Release.key"
       | sudo apt-key add -
-  - sudo apt-get update -qq
-  - sudo apt-get install -qq
+  - sudo apt-get update -y
+  - sudo apt-get install -y
       --no-install-recommends
       osc
 
