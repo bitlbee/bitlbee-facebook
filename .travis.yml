@@ -1,4 +1,14 @@
+dist: trusty
 language: c
+
+addons:
+  apt:
+    packages:
+    - libevent-dev
+    - fakeroot
+    - libotr5-dev
+    - clang
+    - libjson-glib-dev
 
 notifications:
   email: false
@@ -28,8 +38,6 @@ before_install:
   - sudo apt-get update -qq
   - sudo apt-get install -qq
       --no-install-recommends
-      clang
-      libjson-glib-dev
       osc
 
 install:
