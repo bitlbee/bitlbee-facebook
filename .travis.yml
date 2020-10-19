@@ -31,6 +31,8 @@ before_install:
       clang
       libjson-glib-dev
       osc
+      libgnutls28-dev
+      libgcrypt20-dev
 
 install:
   - .travis/bitlbee.sh
