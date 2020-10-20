@@ -1,3 +1,8 @@
+bitlbee-facebook-1.2.1 (2020-10-20):
+  - Fix "Parse error: unexpected identifier 'taNewMessage'"
+  - Fix "Failed to read thrift: facebook-api.c:1929 fb_api_cb_publish_pt:
+    assertion 'fb_thrift_read_stop(thft)' failed"
+
 bitlbee-facebook-1.2.0 (2019-01-24):
   - Fix ERROR_QUEUE_OVERFLOW on login by bumping orca agent version
   - Fix "Failed to read fixed header" with TLS 1.3 / GnuTLS 3.6.x
