@@ -1534,6 +1534,25 @@ static GSList *
 fb_api_cb_publish_ms_event(FbApi *api, JsonNode *root, GSList *events, FbApiEventType type, GError **error);
 
 static void
+fb_api_cb_publish_mst(FbThrift *thft, GError **error)
+{
+    if (fb_thrift_read_isstop(thft)) {
+        FB_API_TCHK(fb_thrift_read_stop(thft));
+    } else {
+        FbThriftType type;
+        gint16 id;
+
+        FB_API_TCHK(fb_thrift_read_field(thft, &type, &id, 0));
+        FB_API_TCHK(type == FB_THRIFT_TYPE_STRING);
+        FB_API_TCHK(id == 2);
+        FB_API_TCHK(fb_thrift_read_str(thft, NULL));
+        FB_API_TCHK(fb_thrift_read_stop(thft));
+    }
+
+    return;
+}
+
+static void
 fb_api_cb_publish_ms(FbApi *api, GByteArray *pload)
 {
     const gchar *data;
@@ -1563,9 +1582,13 @@ fb_api_cb_publish_ms(FbApi *api, GByteArray *pload)
 
     /* Read identifier string (for Facebook employees) */
     thft = fb_thrift_new(pload, 0);
-    fb_thrift_read_str(thft, NULL);
+    fb_api_cb_publish_mst(thft, &err);
     size = fb_thrift_get_pos(thft);
     g_object_unref(thft);
+
+    FB_API_ERROR_EMIT(api, err,
+        return;
+    );
 
     g_return_if_fail(size < pload->len);
     data = (gchar *) pload->data + size;
