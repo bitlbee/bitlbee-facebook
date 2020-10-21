@@ -28,7 +28,7 @@ struct _FbThriftPrivate
     guint lastbool;
 };
 
-G_DEFINE_TYPE(FbThrift, fb_thrift, G_TYPE_OBJECT);
+G_DEFINE_TYPE_WITH_PRIVATE(FbThrift, fb_thrift, G_TYPE_OBJECT);
 
 static void
 fb_thrift_dispose(GObject *obj)
@@ -46,7 +46,6 @@ fb_thrift_class_init(FbThriftClass *klass)
     GObjectClass *gklass = G_OBJECT_CLASS(klass);
 
     gklass->dispose = fb_thrift_dispose;
-    g_type_class_add_private(klass, sizeof (FbThriftPrivate));
 }
 
 static void
@@ -54,8 +53,7 @@ fb_thrift_init(FbThrift *thft)
 {
     FbThriftPrivate *priv;
 
-    priv = G_TYPE_INSTANCE_GET_PRIVATE(thft, FB_TYPE_THRIFT,
-                                       FbThriftPrivate);
+    priv = fb_thrift_get_instance_private(thft);
     thft->priv = priv;
 }
 
