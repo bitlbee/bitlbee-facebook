@@ -33,8 +33,49 @@ typedef enum {
     FB_PTRBIT_UNREAD_MSG
 } FbPtrBit;
 
-static void
-fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data);
+static struct groupchat * fb_groupchat_new(struct im_connection *ic, FbId tid, const gchar *name);
+static gboolean fb_channel_join(struct im_connection *ic, FbId tid, const gchar **channel);
+static void fb_cb_api_auth(FbApi *api, gpointer data);
+static void fb_cb_api_connect(FbApi *api, gpointer data);
+static void fb_cb_api_contact(FbApi *api, FbApiUser *user, gpointer data);
+static gboolean fb_cb_sync_contacts(gpointer data, gint fd, b_input_condition cond);
+static void fb_sync_contacts_add_timeout(FbData *fata);
+static void fb_cb_api_contacts(FbApi *api, GSList *users, gboolean complete, gpointer data);
+static void fb_cb_api_contacts_delta(FbApi *api, GSList *added, GSList *removed, gpointer data);
+static void fb_cb_api_error(FbApi *api, GError *error, gpointer data);
+static void fb_cb_api_events(FbApi *api, GSList *events, gpointer data);
+static void fb_cb_api_messages(FbApi *api, GSList *msgs, gpointer data);
+static void fb_cb_api_presences(FbApi *api, GSList *press, gpointer data);
+static gchar * fb_thread_topic_gen(FbApiThread *thrd);
+static void fb_cb_api_thread(FbApi *api, FbApiThread *thrd, gpointer data);
+static void fb_cb_api_thread_create(FbApi *api, FbId tid, gpointer data);
+static void fb_cb_api_thread_kicked(FbApi *api, FbApiThread *thrd, gpointer data);
+static void fb_cb_api_threads(FbApi *api, GSList *thrds, gpointer data);
+static void fb_cb_api_typing(FbApi *api, FbApiTyping *typg, gpointer data);
+static char * fb_eval_open(struct set *set, char *value);
+static char * fb_eval_mark_read(struct set *set, char *value);
+static void fb_init(account_t *acct);
+static void fb_login(account_t *acc);
+static void fb_logout(struct im_connection *ic);
+static int fb_buddy_msg(struct im_connection *ic, char *to, char *message, int flags);
+static void fb_set_away(struct im_connection *ic, char *state, char *message);
+static int fb_send_typing(struct im_connection *ic, char *who, int flags);
+static void fb_add_buddy(struct im_connection *ic, char *name, char *group);
+static void fb_remove_buddy(struct im_connection *ic, char *name, char *group);
+static void fb_chat_invite(struct groupchat *gc, char *who, char *message);
+static void fb_chat_kick(struct groupchat *gc, char *who, const char *message);
+static void fb_chat_leave(struct groupchat *gc);
+static void fb_chat_msg(struct groupchat *gc, char *message, int flags);
+static struct groupchat * fb_chat_join(struct im_connection *ic, const char *room, const char *nick, const char *password, set_t **sets);
+static void fb_chat_topic(struct groupchat *gc, char *topic);
+static GList * fb_away_states(struct im_connection *ic);
+static void fb_buddy_data_add(struct bee_user *bu);
+static void fb_buddy_data_free(struct bee_user *bu);
+static account_t * fb_cmd_account(irc_t *irc, char **args, guint required, guint *offset);
+static void fb_cmd_fbchats(irc_t *irc, char **args);
+static void fb_cmd_fbcreate(irc_t *irc, char **args);
+static void fb_cmd_fbjoin(irc_t *irc, char **args);
+static void fb_cmd_fbleave(irc_t *irc, char **args);
 
 static struct groupchat *
 fb_groupchat_new(struct im_connection *ic, FbId tid, const gchar *name)
@@ -643,7 +684,7 @@ fb_cb_api_threads(FbApi *api, GSList *thrds, gpointer data)
     fb_data_clear_threads(fata);
 
     if (thrds == NULL) {
-        imcb_log(ic, "No chats to display.");
+        imcb_log(ic, "No group chats to display.");
         return;
     }
 
@@ -782,6 +823,7 @@ fb_login(account_t *acc)
     FbApi *api;
     FbData *fata;
     struct im_connection *ic;
+    char *command[] = {acc->tag, NULL};
 
     fata = fb_data_new(acc);
     api = fb_data_get_api(fata);
@@ -861,6 +903,8 @@ fb_login(account_t *acc)
 
     imcb_log(ic, "Fetching contacts");
     fb_api_contacts(api);
+    imcb_log(ic, "Fetching group chats");
+    fb_cmd_fbchats(acc->bee->ui_data, command);
 }
 
 static void
@@ -1228,6 +1272,73 @@ fb_cmd_fbjoin(irc_t *irc, char **args)
     irc_rootmsg(irc, "Joining channel %s", chan);
 }
 
+static void
+fb_cmd_fbleave(irc_t *irc, char **args)
+{
+    FbApi *api;
+    account_t *acct;
+    FbData *fata;
+    FbId tid;
+    gchar stid[FB_ID_STRMAX];
+    guint i;
+    guint oset;
+    irc_channel_t *ich;
+    struct groupchat *gc;
+    struct im_connection *ic;
+    char *command[] = {"part", NULL, NULL};
+
+
+    acct = fb_cmd_account(irc, args, 1, &oset);
+
+    if (acct == NULL) {
+        return;
+    }
+
+    fata = acct->ic->proto_data;
+    ic = fb_data_get_connection(fata);
+
+    i = g_ascii_strtoll(args[oset], NULL, 10);
+    tid = fb_data_get_thread(fata, i - 1);
+    gc = fb_data_get_gc(fata, args[oset]);
+
+    if ( gc != NULL) {
+        irc_rootmsg(irc, "Leaving group associated with channel %s.", args[oset]);
+        tid = FB_ID_FROM_STR(gc->title);
+    } else if ((i > 0) && (tid)) {
+        FB_ID_TO_STR(tid, stid);
+        gc = bee_chat_by_title(ic->bee, ic, stid);
+        if (G_UNLIKELY(gc == NULL)) {
+            irc_rootmsg(irc, "Group at index %s with thread id %s not found.", args[oset], stid);
+            return;
+        }
+        irc_rootmsg(irc, "Leaving group with thread id %s.", stid);
+    } else {
+        gc = bee_chat_by_title(ic->bee, ic, args[oset]);
+        if (G_UNLIKELY(gc == NULL)) {
+            irc_rootmsg(irc, "Parameter: %s is not a valid channel, index or thread id.", args[oset]);
+            return;
+        }
+        tid = FB_ID_FROM_STR(args[oset]);
+        irc_rootmsg(irc, "Leaving group with thread id %s.", args[oset]);
+    }
+    ich = gc->ui_data;
+
+    command[1] = ich->name;
+    irc_exec(irc, command);
+
+    command[0] = "channel";
+    command[2] = "del";
+    root_command(irc, command);
+
+    api = fb_data_get_api(fata);
+    fb_api_thread_remove(api, tid, 0);
+
+    command[0] = acct->tag;
+    command[1] = NULL;
+    command[2] = NULL;
+    fb_cmd_fbchats(irc, command);
+}
+
 G_MODULE_EXPORT void
 init_plugin(void);
 
@@ -1268,6 +1379,7 @@ init_plugin(void)
     root_command_add("fbchats", 0, fb_cmd_fbchats, 0);
     root_command_add("fbcreate", 0, fb_cmd_fbcreate, 0);
     root_command_add("fbjoin", 0, fb_cmd_fbjoin, 0);
+    root_command_add("fbleave", 0, fb_cmd_fbleave, 0);
 }
 
 

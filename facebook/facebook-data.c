@@ -89,7 +89,7 @@ fb_data_init(FbData *fata)
     priv->msgs = g_queue_new();
     priv->tids = g_queue_new();
     priv->evs = g_hash_table_new_full(g_str_hash, g_str_equal, g_free, NULL);
-    priv->gcs = g_hash_table_new(g_direct_hash, g_direct_equal);
+    priv->gcs = g_hash_table_new(g_str_hash, g_str_equal);
 }
 
 FbData *
@@ -228,22 +228,26 @@ void
 fb_data_add_groupchat(FbData *fata, struct groupchat *gc)
 {
     FbDataPrivate *priv;
+    irc_channel_t *ich;
 
     g_return_if_fail(FB_IS_DATA(fata));
     priv = fata->priv;
+    ich = gc->ui_data;
 
-    g_hash_table_replace(priv->gcs, gc, gc);
+    g_hash_table_replace(priv->gcs, ich->name, gc);
 }
 
 void
 fb_data_remove_groupchat(FbData *fata, struct groupchat *gc)
 {
     FbDataPrivate *priv;
+    irc_channel_t *ich;
 
     g_return_if_fail(FB_IS_DATA(fata));
     priv = fata->priv;
+    ich = gc->ui_data;
 
-    g_hash_table_remove(priv->gcs, gc);
+    g_hash_table_remove(priv->gcs, ich->name);
 }
 
 void
@@ -285,6 +289,19 @@ fb_data_clear_threads(FbData *fata)
         tid = g_queue_pop_head(priv->tids);
         g_free(tid);
     }
+}
+
+struct groupchat *
+fb_data_get_gc(FbData *fata, gchar* chan)
+{
+    FbDataPrivate *priv;
+    struct groupchat *gc;
+
+    g_return_val_if_fail(FB_IS_DATA(fata), 0);
+    priv = fata->priv;
+
+    gc = g_hash_table_lookup (priv->gcs, chan);
+    return gc;
 }
 
 FbId
