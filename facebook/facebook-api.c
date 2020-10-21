@@ -100,7 +100,7 @@ fb_api_sticker(FbApi *api, FbId sid, FbApiMessage *msg);
 void
 fb_api_contacts_delta(FbApi *api, const gchar *delta_cursor);
 
-G_DEFINE_TYPE(FbApi, fb_api, G_TYPE_OBJECT);
+G_DEFINE_TYPE_WITH_PRIVATE(FbApi, fb_api, G_TYPE_OBJECT);
 
 static const gchar *agents[] = {
     FB_API_AGENT,
@@ -240,7 +240,6 @@ fb_api_class_init(FbApiClass *klass)
     gklass->set_property = fb_api_set_property;
     gklass->get_property = fb_api_get_property;
     gklass->dispose = fb_api_dispose;
-    g_type_class_add_private(klass, sizeof (FbApiPrivate));
 
     /**
      * FbApi:cid:
@@ -599,7 +598,7 @@ fb_api_init(FbApi *api)
 {
     FbApiPrivate *priv;
 
-    priv = G_TYPE_INSTANCE_GET_PRIVATE(api, FB_TYPE_API, FbApiPrivate);
+    priv = fb_api_get_instance_private(api);
     api->priv = priv;
 
     priv->http = fb_http_new(FB_API_AGENT);

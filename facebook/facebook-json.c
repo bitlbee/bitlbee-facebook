@@ -44,7 +44,7 @@ struct _FbJsonValuesPrivate
     GError *error;
 };
 
-G_DEFINE_TYPE(FbJsonValues, fb_json_values, G_TYPE_OBJECT);
+G_DEFINE_TYPE_WITH_PRIVATE(FbJsonValues, fb_json_values, G_TYPE_OBJECT);
 
 static void
 fb_json_values_dispose(GObject *obj)
@@ -79,7 +79,6 @@ fb_json_values_class_init(FbJsonValuesClass *klass)
     GObjectClass *gklass = G_OBJECT_CLASS(klass);
 
     gklass->dispose = fb_json_values_dispose;
-    g_type_class_add_private(klass, sizeof (FbJsonValuesPrivate));
 }
 
 static void
@@ -87,8 +86,7 @@ fb_json_values_init(FbJsonValues *values)
 {
     FbJsonValuesPrivate *priv;
 
-    priv = G_TYPE_INSTANCE_GET_PRIVATE(values, FB_TYPE_JSON_VALUES,
-                                       FbJsonValuesPrivate);
+    priv = fb_json_values_get_instance_private(values);
     values->priv = priv;
 
     priv->queue = g_queue_new();

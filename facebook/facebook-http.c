@@ -47,8 +47,8 @@ struct _FbHttpRequestPrivate
     gboolean freed;
 };
 
-G_DEFINE_TYPE(FbHttp, fb_http, G_TYPE_OBJECT);
-G_DEFINE_TYPE(FbHttpRequest, fb_http_request, G_TYPE_OBJECT);
+G_DEFINE_TYPE_WITH_PRIVATE(FbHttp, fb_http, G_TYPE_OBJECT);
+G_DEFINE_TYPE_WITH_PRIVATE(FbHttpRequest, fb_http_request, G_TYPE_OBJECT);
 
 static void
 fb_http_dispose(GObject *obj)
@@ -68,7 +68,6 @@ fb_http_class_init(FbHttpClass *klass)
     GObjectClass *gklass = G_OBJECT_CLASS(klass);
 
     gklass->dispose = fb_http_dispose;
-    g_type_class_add_private(klass, sizeof (FbHttpPrivate));
 }
 
 static void
@@ -76,7 +75,7 @@ fb_http_init(FbHttp *http)
 {
     FbHttpPrivate *priv;
 
-    priv = G_TYPE_INSTANCE_GET_PRIVATE(http, FB_TYPE_HTTP, FbHttpPrivate);
+    priv = fb_http_get_instance_private(http);
     http->priv = priv;
 
     priv->cookies = fb_http_values_new();
@@ -116,7 +115,6 @@ fb_http_request_class_init(FbHttpRequestClass *klass)
     GObjectClass *gklass = G_OBJECT_CLASS(klass);
 
     gklass->dispose = fb_http_request_dispose;
-    g_type_class_add_private(klass, sizeof (FbHttpRequestPrivate));
 }
 
 static void
@@ -124,8 +122,7 @@ fb_http_request_init(FbHttpRequest *req)
 {
     FbHttpRequestPrivate *priv;
 
-    priv = G_TYPE_INSTANCE_GET_PRIVATE(req, FB_TYPE_HTTP_REQUEST,
-                                       FbHttpRequestPrivate);
+    priv = fb_http_request_get_instance_private(req);
     req->priv = priv;
 
     priv->headers = fb_http_values_new();
