@@ -1544,7 +1544,8 @@ fb_api_cb_publish_mst(FbThrift *thft, GError **error)
 
         FB_API_TCHK(fb_thrift_read_field(thft, &type, &id, 0));
         FB_API_TCHK(type == FB_THRIFT_TYPE_STRING);
-        FB_API_TCHK(id == 2);
+        fb_util_debug_info("fb_api_cb_publish_mst() id: %d", id);
+        FB_API_TCHK(id == 1 || id == 2);
         FB_API_TCHK(fb_thrift_read_str(thft, NULL));
         FB_API_TCHK(fb_thrift_read_stop(thft));
     }
