@@ -6,6 +6,10 @@ notifications:
 os:
   - linux
 
+arch:
+  - AMD64
+  - ppc64le
+
 compiler:
   - gcc
 
