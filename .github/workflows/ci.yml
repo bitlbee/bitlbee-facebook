@@ -24,4 +24,6 @@ jobs:
       run: |
         CFLAGS="-Werror" ./autogen.sh --enable-warnings
         make all clean
+    - name: scan-build
+      run: |
         scan-build -k --status-bugs make all clean
