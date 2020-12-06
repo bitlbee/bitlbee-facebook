@@ -17,7 +17,7 @@ jobs:
         #curl -s "http://download.opensuse.org/repositories/openSUSE:/Tools/xUbuntu_$(lsb_release -rs)/Release.key" \
         #  | sudo apt-key add -
         sudo apt-get update -y
-        sudo apt-get install -y --no-install-recommends clang git make pkg-config libgnutls28-dev libgcrypt20-dev #osc
+        sudo apt-get install -y --no-install-recommends clang git make pkg-config libgnutls28-dev libgcrypt20-dev libjson-glib-dev #osc
     - name: bitlbee
       run: ./.travis/bitlbee.sh
     - name: bitlbee-facebook
