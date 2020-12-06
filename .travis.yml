@@ -33,7 +33,7 @@ before_install:
       osc
       libgnutls28-dev
       libgcrypt20-dev
-      python-m2crypto
+      python3-m2crypto
 
 install:
   - .travis/bitlbee.sh
