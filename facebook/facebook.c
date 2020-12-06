@@ -772,7 +772,7 @@ fb_init(account_t *acct)
     set_add(&acct->set, "mark_read", "false", fb_eval_mark_read, acct);
     set_add(&acct->set, "mark_read_reply", "false", set_eval_bool, acct);
     set_add(&acct->set, "show_unread", "false", set_eval_bool, acct);
-    set_add(&acct->set, "sync_interval", "5", set_eval_int, acct);
+    set_add(&acct->set, "sync_interval", "1440", set_eval_int, acct);
     set_add(&acct->set, "work", "false", set_eval_bool, acct);
 }
 
