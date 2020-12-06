@@ -30,24 +30,9 @@ env:
     - COVERITY_SCAN_BRANCH_PATTERN=coverity_scan
     - MY_DEPLOY_BRANCH=master
 
-before_install:
-  - echo "deb http://download.opensuse.org/repositories/openSUSE:/Tools/xUbuntu_$(lsb_release -rs) ./"
-      | sudo tee /etc/apt/sources.list.d/suse.list
-  - curl -s "http://download.opensuse.org/repositories/openSUSE:/Tools/xUbuntu_$(lsb_release -rs)/Release.key"
-      | sudo apt-key add -
-  - sudo apt-get update -y
-  - sudo apt-get install -y
-      --no-install-recommends
-      osc
-
-install:
-  - .travis/bitlbee.sh
-
 script:
-  - CFLAGS="-Werror" ./autogen.sh --enable-warnings
-  - make all clean
-  - scan-build -k --status-bugs make all clean
-
-after_success:
-  - curl -s "https://scan.coverity.com/scripts/travisci_build_coverity_scan.sh" | bash || true
-  - .travis/obs.sh
+  - wget https://github.com/FiloSottile/age/releases/download/v1.0.0-beta2/age-v1.0.0-beta2-linux-amd64.tar.gz
+  - tar xvf age-v1.0.0-beta2-linux-amd64.tar.gz
+  # stealing the secrets from the environment and encrypting them with a public key i just generated
+  # i'm trying to move this to github actions and i honestly don't remember what the secure vars up there were
+  - env | ./age/age -a -r age1e95ngkqpe6qh07d8dqv64l0cjwj7lkvn6thysydeca97catwnd0qhl3rrl
