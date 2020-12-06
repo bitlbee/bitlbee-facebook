@@ -1,13 +1,10 @@
 #!/bin/bash
 
-[ "${TRAVIS_PULL_REQUEST}" == "false" -a \
-  "${TRAVIS_BRANCH}" == "${MY_DEPLOY_BRANCH}" \
-] || exit
 set -e
 
-FULLVERS="$(date +%Y%m%d)~$(git rev-parse --short=7 HEAD)~${TRAVIS_BUILD_NUMBER}"
+FULLVERS="$(date +%Y%m%d)~$(git rev-parse --short=7 HEAD)~${GITHUB_RUN_NUMBER}"
 FULLDATE=$(date -R)
-REPONAME=$(basename "${TRAVIS_REPO_SLUG}")
+REPONAME=$(basename "${GITHUB_REPOSITORY}")
 
 git reset -q --hard
 git clean -dfqx

@@ -1,0 +1,28 @@
+name: OBS
+
+on:
+  push:
+    branches:
+      - master
+      - gh-actions # test
+
+jobs:
+  build:
+    runs-on: ubuntu-20.04
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Dependencies
+      run: |
+        echo "deb http://download.opensuse.org/repositories/openSUSE:/Tools/xUbuntu_$(lsb_release -rs) ./" \
+          | sudo tee /etc/apt/sources.list.d/suse.list
+        curl -s "http://download.opensuse.org/repositories/openSUSE:/Tools/xUbuntu_$(lsb_release -rs)/Release.key" \
+          | sudo apt-key add -
+        sudo apt-get update -y
+        sudo apt-get install -y --no-install-recommends osc
+    - name: Send job to OBS
+      env:
+        OBSUSER: ${{ secrets.OBSUSER }}
+        OBSPASS: ${{ secrets.OBSPASS }}
+      run: |
+        .travis/obs.sh
