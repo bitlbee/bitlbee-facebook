@@ -63,7 +63,7 @@ jobs:
       id: cache
       with:
         path: |
-          /usr/local/include/bitlbee/
+          /tmp/bitlbee/
         key: bitlbee
 
     - name: bitlbee headers
