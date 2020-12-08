@@ -18,14 +18,37 @@ jobs:
         #  | sudo apt-key add -
         sudo apt-get update -y
         sudo apt-get install -y --no-install-recommends clang git make pkg-config libgnutls28-dev libgcrypt20-dev libjson-glib-dev #osc
-    - name: bitlbee
-      run: ./.travis/bitlbee.sh
 
     - uses: actions/cache@v2
-      id: cache-bitlbee-headers
+      id: cache
       with:
-        path: /usr/local/include/bitlbee/
-        key: bitlbee-headers
+        path: |
+          /tmp/bitlbee/
+          /usr/local/include/bitlbee/
+        key: bitlbee
+
+    - name: clone bitlbee
+      if: steps.cache.outputs.cache-hit != 'true'
+      run: |
+        git clone https://github.com/bitlbee/bitlbee /tmp/bitlbee
+
+    - name: build bitlbee
+      run: |
+        cd /tmp/bitlbee
+        git pull
+
+        ./configure \
+            --events=glib \
+            --ssl=gnutls \
+            --doc=0 \
+            --jabber=0 \
+            --msn=0 \
+            --oscar=0 \
+            --twitter=0 \
+            --yahoo=0
+
+        make
+        sudo make install install-dev
 
     - name: bitlbee-facebook
       run: |
@@ -41,6 +64,14 @@ jobs:
 
     steps:
     - uses: actions/checkout@v2
+
+    - uses: actions/cache@v2
+      id: cache
+      with:
+        path: |
+          /usr/local/include/bitlbee/
+        key: bitlbee
+
     - name: Dependencies
       run: |
         echo "deb http://download.opensuse.org/repositories/openSUSE:/Tools/xUbuntu_$(lsb_release -rs) ./" \
