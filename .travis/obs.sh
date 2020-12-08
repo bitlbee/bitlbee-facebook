@@ -26,12 +26,14 @@ ${REPONAME} (${FULLVERS}) UNRELEASED; urgency=medium
  -- Travis CI <travis@travis-ci.org>  ${FULLDATE}
 EOF
 
-cat <<EOF > ~/.oscrc
+mkdir -p ~/.config/osc/
+cat <<EOF > ~/.config/osc/oscrc
 [general]
 apiurl = https://api.opensuse.org
 [https://api.opensuse.org]
 user = ${OBSUSER}
 pass = ${OBSPASS}
+credentials_mgr_class=osc.credentials.PlaintextConfigFileCredentialsManager
 EOF
 
 mkdir -p m4
