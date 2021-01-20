@@ -5,6 +5,7 @@ notifications:
 
 os:
   - linux
+dist: focal
 
 compiler:
   - gcc
