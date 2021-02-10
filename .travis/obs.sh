@@ -43,9 +43,8 @@ osc checkout "home:jgeboski" "${REPONAME}" -o /tmp/obs
 (
     cd /tmp/obs
     rm -f *.{dsc,tar.gz}
-    mkdir /debian
-    touch /debian/changelog
-    dpkg-source -I -b "${TRAVIS_BUILD_DIR}"
+    touch /tmp/changelog #much h*x0r
+    dpkg-source -l"/tmp/changelog" -I -b "${TRAVIS_BUILD_DIR}"
 
     osc addremove -r
     osc commit -m "Updated to ${FULLVERS}"
