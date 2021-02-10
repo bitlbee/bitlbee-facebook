@@ -9,6 +9,8 @@ REPONAME=$(basename "${GITHUB_REPOSITORY}")
 git reset -q --hard
 git clean -dfqx
 
+mkdir debian
+
 sed -ri \
     -e "18 s/^(\s+).*(,)\$/\1\[${FULLVERS}\]\2/" \
     -e "s|^PKG_CHECK_MODULES\(\[BITLBEE\].*|plugindir=/usr/lib/bitlbee|" \
