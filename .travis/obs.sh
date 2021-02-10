@@ -13,6 +13,8 @@ sed -ri \
     -e "18 s/^(\s+).*(,)\$/\1\[${FULLVERS}\]\2/" \
     -e "s|^PKG_CHECK_MODULES\(\[BITLBEE\].*|plugindir=/usr/lib/bitlbee|" \
     configure.ac
+
+cp /debian/control /tmp/control
 sed -ri \
     -e "s/bitlbee-dev \([^\(\)]+\),?\s*//" \
     -e "s/(bitlbee[^ ]*) \(>= 3.4\)/\1 (>= 3.5)/g" \
