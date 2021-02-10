@@ -18,8 +18,9 @@ sed -ri \
     -e "s/bitlbee-dev \([^\(\)]+\),?\s*//" \
     -e "s/(bitlbee[^ ]*) \(>= 3.4\)/\1 (>= 3.5)/g" \
     debian/control
+cp debian/control ~/debian/control
 
-cat <<EOF > debian/changelog
+cat <<EOF > ~/debian/changelog
 ${REPONAME} (${FULLVERS}) UNRELEASED; urgency=medium
 
   * Updated to ${FULLVERS}.
