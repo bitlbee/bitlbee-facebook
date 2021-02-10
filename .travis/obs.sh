@@ -9,8 +9,6 @@ REPONAME=$(basename "${GITHUB_REPOSITORY}")
 git reset -q --hard
 git clean -dfqx
 
-mkdir ~/debian
-
 sed -ri \
     -e "18 s/^(\s+).*(,)\$/\1\[${FULLVERS}\]\2/" \
     -e "s|^PKG_CHECK_MODULES\(\[BITLBEE\].*|plugindir=/usr/lib/bitlbee|" \
@@ -20,9 +18,9 @@ sed -ri \
     -e "s/bitlbee-dev \([^\(\)]+\),?\s*//" \
     -e "s/(bitlbee[^ ]*) \(>= 3.4\)/\1 (>= 3.5)/g" \
     debian/control
-cp debian/control ~/debian/control
+cp debian/control /tmp/control
 
-cat <<EOF > ~/debian/changelog
+cat <<EOF > /tmp/changelog
 ${REPONAME} (${FULLVERS}) UNRELEASED; urgency=medium
 
   * Updated to ${FULLVERS}.
@@ -47,7 +45,7 @@ osc checkout "home:jgeboski" "${REPONAME}" -o /tmp/obs
 (
     cd /tmp/obs
     rm -f *.{dsc,tar.gz}
-    dpkg-source -c"~/debian/control" -l"~/debian/changelog" -I -b "${TRAVIS_BUILD_DIR}"
+    dpkg-source -c"/tmp/control" -l"/tmp/changelog" -I -b "${TRAVIS_BUILD_DIR}"
 
     osc addremove -r
     osc commit -m "Updated to ${FULLVERS}"
