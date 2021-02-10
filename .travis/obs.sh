@@ -39,7 +39,8 @@ EOF
 mkdir -p m4
 cp /usr/local/include/bitlbee/*.h facebook
 #osc checkout "home:${OBSUSER}" "${REPONAME}" -o /tmp/obs
-#
+osc checkout "${GITHUB_REPOSITORY}" -o /tmp/obs
+
 #(
 #    cd /tmp/obs
 #    rm -f *.{dsc,tar.gz}
