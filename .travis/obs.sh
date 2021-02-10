@@ -38,13 +38,13 @@ EOF
 
 mkdir -p m4
 cp /usr/local/include/bitlbee/*.h facebook
-osc checkout "home:${OBSUSER}" "${REPONAME}" -o /tmp/obs
-
-(
-    cd /tmp/obs
-    rm -f *.{dsc,tar.gz}
-    dpkg-source -I -b "${TRAVIS_BUILD_DIR}"
-
-    osc addremove -r
-    osc commit -m "Updated to ${FULLVERS}"
-)
+#osc checkout "home:${OBSUSER}" "${REPONAME}" -o /tmp/obs
+#
+#(
+#    cd /tmp/obs
+#    rm -f *.{dsc,tar.gz}
+#    dpkg-source -I -b "${TRAVIS_BUILD_DIR}"
+#
+#    osc addremove -r
+#    osc commit -m "Updated to ${FULLVERS}"
+#)
