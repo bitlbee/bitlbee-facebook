@@ -43,6 +43,7 @@ osc checkout "home:jgeboski" "${REPONAME}" -o /tmp/obs
 (
     cd /tmp/obs
     rm -f *.{dsc,tar.gz}
+    mkdir /debian
     touch /debian/changelog
     dpkg-source -I -b "${TRAVIS_BUILD_DIR}"
 
