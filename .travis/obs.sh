@@ -41,6 +41,7 @@ mkdir -p m4
 cp /usr/local/include/bitlbee/*.h facebook
 osc checkout "home:jgeboski" "${REPONAME}" -o /tmp/obs
 
+mkdir /tmp/obs/debian
 cp debian/changelog /tmp/obs/debian/changelog
 cp debian/control /tmp/obs/debian/control
 
