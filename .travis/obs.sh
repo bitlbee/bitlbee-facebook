@@ -14,13 +14,12 @@ sed -ri \
     -e "s|^PKG_CHECK_MODULES\(\[BITLBEE\].*|plugindir=/usr/lib/bitlbee|" \
     configure.ac
 
-cp debian/control /tmp/control
 sed -ri \
     -e "s/bitlbee-dev \([^\(\)]+\),?\s*//" \
     -e "s/(bitlbee[^ ]*) \(>= 3.4\)/\1 (>= 3.5)/g" \
-    /tmp/control
+    debian/control
 
-cat <<EOF > /tmp/changelog
+cat <<EOF > debian/changelog
 ${REPONAME} (${FULLVERS}) UNRELEASED; urgency=medium
 
   * Updated to ${FULLVERS}.
@@ -45,7 +44,7 @@ osc checkout "home:jgeboski" "${REPONAME}" -o /tmp/obs
 (
     cd /tmp/obs
     rm -f *.{dsc,tar.gz}
-    dpkg-source -c"/tmp/control" -l"/tmp/changelog" -I -b "${TRAVIS_BUILD_DIR}"
+    dpkg-source -c"~/debian/control" -l"~/debian/changelog" -I -b "${TRAVIS_BUILD_DIR}"
 
     osc addremove -r
     osc commit -m "Updated to ${FULLVERS}"
