@@ -9,7 +9,7 @@ REPONAME=$(basename "${GITHUB_REPOSITORY}")
 git reset -q --hard
 git clean -dfqx
 
-mkdir debian
+mkdir ~/debian
 
 sed -ri \
     -e "18 s/^(\s+).*(,)\$/\1\[${FULLVERS}\]\2/" \
