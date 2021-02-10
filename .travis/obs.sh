@@ -18,7 +18,7 @@ sed -ri \
     -e "s/(bitlbee[^ ]*) \(>= 3.4\)/\1 (>= 3.5)/g" \
     debian/control
 
-cat <<EOF > debian/changelog
+cat <<EOF > /tmp/changelog
 ${REPONAME} (${FULLVERS}) UNRELEASED; urgency=medium
 
   * Updated to ${FULLVERS}.
@@ -43,7 +43,6 @@ osc checkout "home:jgeboski" "${REPONAME}" -o /tmp/obs
 (
     cd /tmp/obs
     rm -f *.{dsc,tar.gz}
-    touch /tmp/changelog #much h*x0r
     dpkg-source -l"/tmp/changelog" -I -b "${TRAVIS_BUILD_DIR}"
 
     osc addremove -r
