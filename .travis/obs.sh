@@ -41,14 +41,12 @@ mkdir -p m4
 cp /usr/local/include/bitlbee/*.h facebook
 osc checkout "home:jgeboski" "${REPONAME}" -o /tmp/obs
 
-mkdir /tmp/obs/debian
-cp debian/changelog /tmp/obs/debian/changelog
-cp debian/control /tmp/obs/debian/control
+BUILD_DIR=$(pwd)
 
 (
     cd /tmp/obs
     rm -f *.{dsc,tar.gz}
-    dpkg-source -I -b "${TRAVIS_BUILD_DIR}"
+    dpkg-source -I -b "${BUILD_DIR}"
 
     osc addremove -r
     osc commit -m "Updated to ${FULLVERS}"
