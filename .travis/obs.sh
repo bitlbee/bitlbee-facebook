@@ -5,6 +5,7 @@ set -e
 FULLVERS="$(date +%Y%m%d)~$(git rev-parse --short=7 HEAD)~${GITHUB_RUN_NUMBER}"
 FULLDATE=$(date -R)
 REPONAME=$(basename "${GITHUB_REPOSITORY}")
+BUILD_DIR=$(dirname "${GITHUB_REPOSITORY}")
 
 git reset -q --hard
 git clean -dfqx
@@ -41,12 +42,10 @@ mkdir -p m4
 cp /usr/local/include/bitlbee/*.h facebook
 osc checkout "home:jgeboski" "${REPONAME}" -o /tmp/obs
 
-BUILD_DIR=$(pwd)
-
 (
     cd /tmp/obs
     rm -f *.{dsc,tar.gz}
-    dpkg-source -I -b "${BUILD_DIR}"
+    dpkg-source -b "${BUILD_DIR}"
 
     osc addremove -r
     osc commit -m "Updated to ${FULLVERS}"
