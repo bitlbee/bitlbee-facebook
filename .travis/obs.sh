@@ -5,7 +5,7 @@ set -e
 FULLVERS="$(date +%Y%m%d)~$(git rev-parse --short=7 HEAD)~${GITHUB_RUN_NUMBER}"
 FULLDATE=$(date -R)
 REPONAME=$(basename "${GITHUB_REPOSITORY}")
-BUILD_DIR=$(dirname "${GITHUB_REPOSITORY}")
+BUILD_DIR=$(pwd)
 
 git reset -q --hard
 git clean -dfqx
