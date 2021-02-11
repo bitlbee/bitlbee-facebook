@@ -117,7 +117,7 @@
  *
  */
 
-#define FB_ORCA_AGENT "[FBAN/Orca-Android;FBAV/192.0.0.31.101;FBBV/14477681]"
+#define FB_ORCA_AGENT "[FBAN/Orca-Android;FBAV/537.0.0.31.101;FBBV/14477681]"
 
 /**
  * FB_API_AGENT:

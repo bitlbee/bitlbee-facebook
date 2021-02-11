@@ -37,7 +37,7 @@ static const gchar *fb_props_strs[] = {
     "token"
 };
 
-G_DEFINE_TYPE(FbData, fb_data, G_TYPE_OBJECT);
+G_DEFINE_TYPE_WITH_PRIVATE(FbData, fb_data, G_TYPE_OBJECT);
 
 static void
 fb_data_dispose(GObject *obj)
@@ -74,7 +74,6 @@ fb_data_class_init(FbDataClass *klass)
     GObjectClass *gklass = G_OBJECT_CLASS(klass);
 
     gklass->dispose = fb_data_dispose;
-    g_type_class_add_private(klass, sizeof (FbDataPrivate));
 }
 
 static void
@@ -82,7 +81,7 @@ fb_data_init(FbData *fata)
 {
     FbDataPrivate *priv;
 
-    priv = G_TYPE_INSTANCE_GET_PRIVATE(fata, FB_TYPE_DATA, FbDataPrivate);
+    priv = fb_data_get_instance_private(fata);
     fata->priv = priv;
 
     priv->api = fb_api_new();

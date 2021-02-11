@@ -15,7 +15,7 @@
 
 AC_INIT(
     [bitlbee-facebook],
-    [1.2.0],
+    [1.2.1],
     [https://github.com/bitlbee/bitlbee-facebook/issues],
     [bitlbee-facebook],
     [https://github.com/bitlbee/bitlbee-facebook],
@@ -53,7 +53,7 @@ AC_ARG_ENABLE(
 )
 
 AS_IF(
-    [test "x$WARNINGS" == "xyes"],
+    [test "x$WARNINGS" = "xyes"],
     [CFLAGS="$CFLAGS -Wall -Wextra \
      -Waggregate-return \
      -Wdeclaration-after-statement \

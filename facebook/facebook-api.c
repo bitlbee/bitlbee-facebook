@@ -100,7 +100,7 @@ fb_api_sticker(FbApi *api, FbId sid, FbApiMessage *msg);
 void
 fb_api_contacts_delta(FbApi *api, const gchar *delta_cursor);
 
-G_DEFINE_TYPE(FbApi, fb_api, G_TYPE_OBJECT);
+G_DEFINE_TYPE_WITH_PRIVATE(FbApi, fb_api, G_TYPE_OBJECT);
 
 static const gchar *agents[] = {
     FB_API_AGENT,
@@ -240,7 +240,6 @@ fb_api_class_init(FbApiClass *klass)
     gklass->set_property = fb_api_set_property;
     gklass->get_property = fb_api_get_property;
     gklass->dispose = fb_api_dispose;
-    g_type_class_add_private(klass, sizeof (FbApiPrivate));
 
     /**
      * FbApi:cid:
@@ -599,7 +598,7 @@ fb_api_init(FbApi *api)
 {
     FbApiPrivate *priv;
 
-    priv = G_TYPE_INSTANCE_GET_PRIVATE(api, FB_TYPE_API, FbApiPrivate);
+    priv = fb_api_get_instance_private(api);
     api->priv = priv;
 
     priv->http = fb_http_new(FB_API_AGENT);
@@ -1534,6 +1533,26 @@ static GSList *
 fb_api_cb_publish_ms_event(FbApi *api, JsonNode *root, GSList *events, FbApiEventType type, GError **error);
 
 static void
+fb_api_cb_publish_mst(FbThrift *thft, GError **error)
+{
+    if (fb_thrift_read_isstop(thft)) {
+        FB_API_TCHK(fb_thrift_read_stop(thft));
+    } else {
+        FbThriftType type;
+        gint16 id;
+
+        FB_API_TCHK(fb_thrift_read_field(thft, &type, &id, 0));
+        FB_API_TCHK(type == FB_THRIFT_TYPE_STRING);
+        fb_util_debug_info("fb_api_cb_publish_mst() id: %d", id);
+        FB_API_TCHK(id == 1 || id == 2);
+        FB_API_TCHK(fb_thrift_read_str(thft, NULL));
+        FB_API_TCHK(fb_thrift_read_stop(thft));
+    }
+
+    return;
+}
+
+static void
 fb_api_cb_publish_ms(FbApi *api, GByteArray *pload)
 {
     const gchar *data;
@@ -1563,9 +1582,13 @@ fb_api_cb_publish_ms(FbApi *api, GByteArray *pload)
 
     /* Read identifier string (for Facebook employees) */
     thft = fb_thrift_new(pload, 0);
-    fb_thrift_read_str(thft, NULL);
+    fb_api_cb_publish_mst(thft, &err);
     size = fb_thrift_get_pos(thft);
     g_object_unref(thft);
+
+    FB_API_ERROR_EMIT(api, err,
+        return;
+    );
 
     g_return_if_fail(size < pload->len);
     data = (gchar *) pload->data + size;
@@ -1876,10 +1899,10 @@ fb_api_cb_publish_pt(FbThrift *thft, GSList **press, GError **error)
         pres->active = i32 != 0;
         *press = g_slist_prepend(*press, pres);
 
-        fb_util_debug_info("Presence: %" FB_ID_FORMAT " (%d)",
-                           i64, i32 != 0);
+        fb_util_debug_info("Presence: %" FB_ID_FORMAT " (%d) id: %d",
+                           i64, i32 != 0, id);
 
-        while (id <= 5) {
+        while (id <= 6) {
             if (fb_thrift_read_isstop(thft)) {
                 break;
             }
@@ -1926,7 +1949,9 @@ fb_api_cb_publish_pt(FbThrift *thft, GSList **press, GError **error)
     }
 
     /* Read the field stop */
-    FB_API_TCHK(fb_thrift_read_stop(thft));
+    if (fb_thrift_read_isstop(thft)) {
+        FB_API_TCHK(fb_thrift_read_stop(thft));
+    }
 }
 
 static void
