@@ -53,6 +53,7 @@ jobs:
         scan-build -k --status-bugs make all clean
 
   obs:
+    if: github.ref == 'refs/head/master'
     runs-on: ubuntu-20.04
     needs: build
 
