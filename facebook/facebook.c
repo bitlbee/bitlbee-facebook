@@ -212,9 +212,11 @@ fb_sync_contacts_add_timeout(FbData *fata)
 
     sync = set_getint(&acct->set, "sync_interval");
 
-    if (sync < 1) {
-        set_setint(&acct->set, "sync_interval", 1);
-        sync = 1;
+    /* if it's 5 minutes or lower, set it to the new default,
+     * since servers really don't like us syncing that often */
+    if (sync <= 5) {
+        sync = 1440;
+        set_setint(&acct->set, "sync_interval", sync);
     }
 
     sync *= 60 * 1000;
