@@ -1,3 +1,9 @@
+bitlbee-facebook-1.2.2 (2021-02-13):
+  - Fix id assertion in fb_api_cb_publish_mst()
+  - Increase sync_interval from 5 to 1440 ("The action attempted has been
+    deemed abusive or is otherwise disallowed")
+  - Bump the FB_ORCA_AGENT version once again
+
 bitlbee-facebook-1.2.1 (2020-10-20):
   - Fix "Parse error: unexpected identifier 'taNewMessage'"
   - Fix "Failed to read thrift: facebook-api.c:1929 fb_api_cb_publish_pt:
