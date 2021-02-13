@@ -32,7 +32,7 @@ AM_PROG_CC_C_O
 LT_INIT([disable-static])
 
 m4_ifdef([AM_SILENT_RULES], [AM_SILENT_RULES([yes])])
-m4_ifdef([AC_PROG_CC_C99],  [AC_PROG_CC_C99])
+m4_ifdef([AC_PROG_CC],  [AC_PROG_CC])
 
 # Define PKG_CHECK_VAR() for pkg-config < 0.28
 m4_define_default(
