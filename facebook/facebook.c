@@ -724,6 +724,16 @@ fb_cb_api_work_sso_login(FbApi *api, gpointer data)
     g_free(url);
 }
 
+static void
+fb_cb_api_twofactor_code_prompt(FbApi *api, gpointer data)
+{
+    FbData *fata = data;
+    struct im_connection *ic;
+
+    ic = fb_data_get_connection(fata);
+    imcb_log(ic, "If you receive new 2FA code, do like this: acc facebook set twofactor_code <your code>");
+}
+
 static char *
 fb_eval_open(struct set *set, char *value)
 {
@@ -768,6 +778,15 @@ fb_init(account_t *acct)
     s->flags = SET_NULL_OK | SET_HIDDEN;
 
     s = set_add(&acct->set, "tweak", NULL, NULL, acct);
+    s->flags = SET_NULL_OK | SET_HIDDEN;
+
+    s = set_add(&acct->set, "machine_id", NULL, NULL, acct);
+    s->flags = SET_NULL_OK | SET_HIDDEN;
+
+    s = set_add(&acct->set, "login_first_factor", NULL, NULL, acct);
+    s->flags = SET_NULL_OK | SET_HIDDEN;
+
+    s = set_add(&acct->set, "twofactor_code", NULL, NULL, acct);
     s->flags = SET_NULL_OK | SET_HIDDEN;
 
     set_add(&acct->set, "group_chat_open", "false", fb_eval_open, acct);
@@ -849,6 +868,10 @@ fb_login(account_t *acc)
     g_signal_connect(api,
                      "work-sso-login",
                      G_CALLBACK(fb_cb_api_work_sso_login),
+                     fata);
+    g_signal_connect(api,
+                     "twofactor-code-prompt",
+                     G_CALLBACK(fb_cb_api_twofactor_code_prompt),
                      fata);
 
     if (!fb_data_load(fata)) {
