@@ -38,6 +38,10 @@ facebook_la_LDFLAGS += -module -avoid-version
 EXTRA_DIST = \
 	marshaller.list
 
+BUILT_SOURCES = \
+	facebook-marshal.c \
+	facebook-marshal.h
+
 CLEANFILES = \
 	facebook-marshal.c \
 	facebook-marshal.h
