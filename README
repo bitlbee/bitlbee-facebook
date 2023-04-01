@@ -31,12 +31,9 @@ the latest.
 
     $ dnf install bitlbee-facebook
 
-### RHEL/CentOS
+### CentOS/RHEL/Rocky
 
-Follow the general instructions for enabling EPEL before installing it:
-
-http://fedoraproject.org/wiki/EPEL#How_can_I_use_these_extra_packages.3F
-
+    $ yum install epel-release
     $ yum install bitlbee-facebook
 
 ## Building from source
